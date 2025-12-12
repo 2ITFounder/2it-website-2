@@ -40,29 +40,7 @@ const demos = [
     description: "Metriche e KPI in tempo reale",
     icon: BarChart3,
     color: "from-purple-500 to-pink-500",
-    preview: (
-      <div className="w-full h-full bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-lg">
-        <div className="grid grid-cols-3 gap-2 mb-2">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="bg-white rounded p-2 shadow-sm">
-              <div className="h-1 bg-gray-200 rounded w-2/3 mb-2" />
-              <div className="h-3 bg-gradient-to-r from-purple-300 to-pink-300 rounded" />
-            </div>
-          ))}
-        </div>
-        <div className="bg-white rounded p-3 shadow-sm">
-          <div className="flex gap-1 items-end justify-between h-16">
-            {[...Array(12)].map((_, i) => (
-              <div
-                key={i}
-                className="flex-1 bg-gradient-to-t from-purple-400 to-pink-400 rounded-t"
-                style={{ height: `${Math.random() * 100}%` }}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-    ),
+    previewKey: "analytics",
   },
   {
     id: 3,
@@ -119,26 +97,30 @@ const demos = [
 export function DemoShowcaseSection() {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isVisible, setIsVisible] = useState(false)
+  const [chartHeights, setChartHeights] = useState<number[]>([])
+
   const sectionRef = useRef<HTMLElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
+  // Intersection Observer
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
-          setIsVisible(true)
-        }
+        if (entries[0].isIntersecting) setIsVisible(true)
       },
       { threshold: 0.2 },
     )
 
-    if (sectionRef.current) {
-      observer.observe(sectionRef.current)
-    }
-
+    if (sectionRef.current) observer.observe(sectionRef.current)
     return () => observer.disconnect()
   }, [])
 
+  // Chart heights (client-only, NO hydration issue)
+  useEffect(() => {
+    setChartHeights(Array.from({ length: 12 }, () => Math.random() * 100))
+  }, [])
+
+  // Auto-scroll
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % demos.length)
@@ -147,15 +129,15 @@ export function DemoShowcaseSection() {
     return () => clearInterval(interval)
   }, [])
 
+  // Scroll container movement
   useEffect(() => {
-    if (scrollContainerRef.current) {
-      const container = scrollContainerRef.current
-      const cardWidth = container.offsetWidth / 3
-      container.scrollTo({
-        left: currentIndex * cardWidth,
-        behavior: "smooth",
-      })
-    }
+    if (!scrollContainerRef.current) return
+    const container = scrollContainerRef.current
+    const cardWidth = container.offsetWidth / 3
+    container.scrollTo({
+      left: currentIndex * cardWidth,
+      behavior: "smooth",
+    })
   }, [currentIndex])
 
   return (
@@ -167,21 +149,21 @@ export function DemoShowcaseSection() {
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10",
           )}
         >
-          <span className="text-sm font-medium gradient-text uppercase tracking-wider">Demo Interattive</span>
-          <h2 className="mt-4 text-3xl md:text-5xl font-bold tracking-tight text-balance animate-text-reveal">
+          <span className="text-sm font-medium gradient-text uppercase tracking-wider">
+            Demo Interattive
+          </span>
+          <h2 className="mt-4 text-3xl md:text-5xl font-bold tracking-tight">
             Scopri le nostre <span className="gradient-text">soluzioni</span>
           </h2>
-          <p className="mt-4 text-muted-foreground text-lg text-pretty">
-            Esplora le interfacce che creiamo: CRM, dashboard, e-commerce e gestionali su misura per il tuo business
+          <p className="mt-4 text-muted-foreground text-lg">
+            CRM, dashboard, e-commerce e gestionali su misura
           </p>
         </div>
 
         <div className="relative">
-          {/* Scrolling Cards Container */}
           <div
             ref={scrollContainerRef}
             className="flex gap-6 overflow-x-auto pb-8 snap-x snap-mandatory scrollbar-hide"
-            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           >
             {demos.map((demo, index) => {
               const Icon = demo.icon
@@ -189,23 +171,18 @@ export function DemoShowcaseSection() {
                 <div
                   key={demo.id}
                   className={cn(
-                    "flex-shrink-0 w-full md:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)] snap-center",
-                    "transition-all duration-700",
+                    "flex-shrink-0 w-full md:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)] snap-center transition-all duration-700",
                     isVisible ? "opacity-100 translate-x-0" : "opacity-0 translate-x-20",
                   )}
                   style={{ transitionDelay: `${index * 150}ms` }}
                 >
                   <div
-                    className={cn(
-                      "group relative glass rounded-2xl overflow-hidden h-[400px]",
-                      "hover:scale-105 transition-all duration-500 cursor-pointer",
-                      "hover:shadow-2xl shimmer-effect",
-                    )}
+                    className="group relative glass rounded-2xl overflow-hidden h-[400px] hover:scale-105 transition-all duration-500 cursor-pointer"
                     onClick={() => setCurrentIndex(index)}
                   >
                     <div
                       className={cn(
-                        "absolute inset-0 bg-gradient-to-br opacity-10 group-hover:opacity-20 transition-opacity",
+                        "absolute inset-0 bg-gradient-to-br opacity-10 group-hover:opacity-20",
                         demo.color,
                       )}
                     />
@@ -216,55 +193,42 @@ export function DemoShowcaseSection() {
                           className={cn(
                             "w-12 h-12 rounded-xl bg-gradient-to-br flex items-center justify-center",
                             demo.color,
-                            "group-hover:scale-110 group-hover:rotate-6 transition-all duration-500 animate-pulse-glow",
                           )}
                         >
                           <Icon className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                          <h3 className="text-lg font-bold group-hover:text-primary transition-colors">{demo.title}</h3>
-                          <p className="text-sm text-muted-foreground">{demo.description}</p>
+                          <h3 className="text-lg font-bold">{demo.title}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {demo.description}
+                          </p>
                         </div>
                       </div>
 
-                      <div className="flex-1 relative rounded-xl overflow-hidden group-hover:scale-[1.02] transition-transform duration-500">
-                        {demo.preview}
-                      </div>
-
-                      <div className="mt-4 flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">Clicca per esplorare</span>
-                        <div className="flex gap-1">
-                          {demos.map((_, i) => (
-                            <div
-                              key={i}
-                              className={cn(
-                                "h-1 rounded-full transition-all duration-300",
-                                i === index ? "w-8 bg-gradient-to-r " + demo.color : "w-2 bg-gray-300",
-                              )}
-                            />
-                          ))}
-                        </div>
+                      <div className="flex-1 relative rounded-xl overflow-hidden">
+                        {demo.previewKey === "analytics" ? (
+                          <div className="w-full h-full bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-lg">
+                            <div className="bg-white rounded p-3 shadow-sm">
+                              <div className="flex gap-1 items-end h-20">
+                                {[...Array(12)].map((_, i) => (
+                                  <div
+                                    key={i}
+                                    className="flex-1 bg-gradient-to-t from-purple-400 to-pink-400 rounded-t"
+                                    style={{ height: `${chartHeights[i] ?? 50}%` }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          demo.preview
+                        )}
                       </div>
                     </div>
                   </div>
                 </div>
               )
             })}
-          </div>
-
-          {/* Navigation Dots */}
-          <div className="flex justify-center gap-2 mt-8">
-            {demos.map((demo, index) => (
-              <button
-                key={demo.id}
-                onClick={() => setCurrentIndex(index)}
-                className={cn(
-                  "h-2 rounded-full transition-all duration-300",
-                  index === currentIndex ? "w-12 bg-gradient-to-r " + demo.color : "w-2 bg-gray-300 hover:bg-gray-400",
-                )}
-                aria-label={`Go to ${demo.title}`}
-              />
-            ))}
           </div>
         </div>
       </Container>

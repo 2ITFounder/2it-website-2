@@ -370,3 +370,21 @@ html {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+@keyframes marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee var(--marquee-duration, 35s) linear infinite;
+}
+
+.marquee:hover {
+  animation-play-state: paused;
+}
+.marquee {
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+}
