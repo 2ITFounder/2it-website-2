@@ -9,23 +9,22 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Nexus Agency | Web Agency B2B",
+  title: "2it | Web Agency B2B",
   description:
     "Trasformiamo le tue idee in esperienze digitali straordinarie. Web design, sviluppo e strategie digitali per il tuo business.",
   generator: "Next.js",
   keywords: ["web agency", "sviluppo web", "design", "B2B", "digital marketing", "Italia"],
-  authors: [{ name: "Nexus Agency" }],
+  authors: [{ name: "2it" }],
   openGraph: {
-    title: "Nexus Agency | Web Agency B2B",
+    title: "2it Website",
     description: "Trasformiamo le tue idee in esperienze digitali straordinarie.",
-    url: "https://nexusagency.it",
-    siteName: "Nexus Agency",
+    siteName: "2it Website",
     locale: "it_IT",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Nexus Agency | Web Agency B2B",
+    title: "2it Agency | Web Agency B2B",
     description: "Trasformiamo le tue idee in esperienze digitali straordinarie.",
   },
   icons: {

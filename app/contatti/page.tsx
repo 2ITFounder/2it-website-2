@@ -8,7 +8,7 @@ import { GlassCard } from "@/components/ui-custom/glass-card"
 import { ContactForm } from "@/components/contact/contact-form"
 
 export const metadata: Metadata = {
-  title: "Contatti | Nexus Agency",
+  title: "Contatti |  2it Web Agency",
   description:
     "Contattaci per discutere del tuo prossimo progetto web. Siamo a tua disposizione per consulenze gratuite.",
 }
