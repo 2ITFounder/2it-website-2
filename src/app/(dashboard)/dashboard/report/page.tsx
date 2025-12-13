@@ -1,111 +1,185 @@
-import { Download, TrendingUp, TrendingDown } from "lucide-react"
-import { Button } from "@/src/components/ui/button"
+"use client"
+
+import { useEffect, useMemo, useState } from "react"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
+import { Button } from "@/src/components/ui/button"
+import { useRouter } from "next/navigation"
 
-const monthlyData = [
-  { month: "Lug", revenue: 32000, projects: 4 },
-  { month: "Ago", revenue: 28000, projects: 3 },
-  { month: "Set", revenue: 45000, projects: 6 },
-  { month: "Ott", revenue: 38000, projects: 5 },
-  { month: "Nov", revenue: 52000, projects: 7 },
-  { month: "Dic", revenue: 45200, projects: 5 },
-]
+type ClientRow = {
+  id: string
+  name: string
+  status: string | null
+  projectsTotal: number
+  projectsActive: number
+  projectsCompleted: number
+  progressAvg: number
+}
 
-const topClients = [
-  { name: "TechFlow Inc.", revenue: 125000, projects: 8 },
-  { name: "Elegance Fashion", revenue: 89000, projects: 5 },
-  { name: "HealthCare Plus", revenue: 67000, projects: 3 },
-  { name: "Urban Architecture", revenue: 54000, projects: 4 },
-]
+type ProjectRow = {
+  id: string
+  title: string
+  client: string
+  status: string
+  progress: number
+  tasksTotal: number
+  tasksDoing: number
+  tasksDone: number
+  overdue: number
+  nextDue: string | null
+}
 
 export default function ReportPage() {
+  const [tab, setTab] = useState<"clients" | "projects">("clients")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
+
+  const [clients, setClients] = useState<ClientRow[]>([])
+  const [projects, setProjects] = useState<ProjectRow[]>([])
+
+  const fetchAll = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const [cRes, pRes] = await Promise.all([
+        fetch("/api/reports/clients", { cache: "no-store" }),
+        fetch("/api/reports/projects", { cache: "no-store" }),
+      ])
+      const cJson = await cRes.json().catch(() => ({}))
+      const pJson = await pRes.json().catch(() => ({}))
+
+      if (!cRes.ok) throw new Error(cJson?.error || "Errore report clienti")
+      if (!pRes.ok) throw new Error(pJson?.error || "Errore report progetti")
+
+      setClients(Array.isArray(cJson.data) ? cJson.data : [])
+      setProjects(Array.isArray(pJson.data) ? pJson.data : [])
+    } catch (e: any) {
+      setError(e?.message || "Errore di rete")
+      setClients([])
+      setProjects([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchAll()
+  }, [])
+
+  const clientsTop = useMemo(() => clients.slice(0, 5), [clients])
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Report</h1>
-          <p className="text-muted-foreground">Analisi e statistiche del business</p>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">Report</h1>
+
+        <div className="flex gap-2">
+          <Button variant={tab === "clients" ? "default" : "outline"} onClick={() => setTab("clients")}>
+            Clienti
+          </Button>
+          <Button variant={tab === "projects" ? "default" : "outline"} onClick={() => setTab("projects")}>
+            Progetti
+          </Button>
         </div>
-        <Button variant="outline">
-          <Download className="w-4 h-4 mr-2" />
-          Esporta Report
-        </Button>
       </div>
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <GlassCard>
-          <p className="text-sm text-muted-foreground">Revenue Totale (Anno)</p>
-          <p className="text-3xl font-bold mt-2">€485.200</p>
-          <div className="flex items-center gap-1 mt-2 text-green-600 text-sm">
-            <TrendingUp className="w-4 h-4" />
-            +23% vs anno precedente
-          </div>
-        </GlassCard>
-        <GlassCard>
-          <p className="text-sm text-muted-foreground">Progetti Completati</p>
-          <p className="text-3xl font-bold mt-2">48</p>
-          <div className="flex items-center gap-1 mt-2 text-green-600 text-sm">
-            <TrendingUp className="w-4 h-4" />
-            +15% vs anno precedente
-          </div>
-        </GlassCard>
-        <GlassCard>
-          <p className="text-sm text-muted-foreground">Valore Medio Progetto</p>
-          <p className="text-3xl font-bold mt-2">€10.108</p>
-          <div className="flex items-center gap-1 mt-2 text-red-500 text-sm">
-            <TrendingDown className="w-4 h-4" />
-            -3% vs anno precedente
-          </div>
-        </GlassCard>
-      </div>
+      {error && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Monthly Revenue */}
+      {loading ? (
+        <div className="text-muted-foreground">Caricamento…</div>
+      ) : tab === "clients" ? (
+        <div className="space-y-6">
+          <GlassCard>
+            <h2 className="font-semibold mb-4">Top clienti (più progetti attivi)</h2>
+            {clientsTop.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Nessun dato.</div>
+            ) : (
+              <div className="space-y-3">
+                {clientsTop.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => router.push(`/dashboard/clienti/${c.id}/report`)}
+                    className="w-full text-left flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition"
+                    >
+
+                    <div>
+                      <div className="font-medium">{c.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Attivi: {c.projectsActive} • Completati: {c.projectsCompleted} • Totali: {c.projectsTotal}
+                      </div>
+                    </div>
+                    <div className="w-28 text-right">
+                      <div className="text-xs text-muted-foreground">Progress medio</div>
+                      <div className="font-semibold">{c.progressAvg}%</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard>
+            <h2 className="font-semibold mb-4">Tutti i clienti</h2>
+
+            {clients.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Nessun cliente.</div>
+            ) : (
+              <div className="space-y-2">
+                {clients.map((c) => (
+                   <button key={c.id} className="p-3 rounded-lg bg-muted/50 flex items-center justify-between" onClick={() => router.push(`/dashboard/clienti/${c.id}/report`)}>
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{c.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Attivi: {c.projectsActive} • Completati: {c.projectsCompleted} • Totali: {c.projectsTotal}
+                      </div>
+                    </div>
+
+                    <div className="w-32">
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-accent rounded-full" style={{ width: `${c.progressAvg}%` }} />
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1 text-right">{c.progressAvg}%</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </GlassCard>
+        </div>
+      ) : (
         <GlassCard>
-          <h3 className="font-semibold mb-6">Revenue Mensile</h3>
-          <div className="space-y-4">
-            {monthlyData.map((data) => (
-              <div key={data.month} className="flex items-center gap-4">
-                <span className="w-8 text-sm text-muted-foreground">{data.month}</span>
-                <div className="flex-1 h-8 bg-muted rounded-lg overflow-hidden">
-                  <div
-                    className="h-full bg-accent rounded-lg flex items-center justify-end pr-3"
-                    style={{ width: `${(data.revenue / 60000) * 100}%` }}
+          <h2 className="font-semibold mb-4">Progetti</h2>
+
+          {projects.length === 0 ? (
+            <div className="text-sm text-muted-foreground">Nessun progetto.</div>
+          ) : (
+            <div className="space-y-2">
+              {projects.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => router.push(`/dashboard/progetti/${p.id}`)}
+                  className="w-full text-left p-3 rounded-lg bg-muted/50 hover:bg-muted transition flex items-center justify-between gap-4"
                   >
-                    <span className="text-xs font-medium text-accent-foreground">
-                      €{(data.revenue / 1000).toFixed(0)}k
-                    </span>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{p.title}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {p.client} • {p.status} • Doing: {p.tasksDoing} • Overdue: {p.overdue}
+                      {p.nextDue ? ` • Next: ${p.nextDue}` : ""}
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </GlassCard>
 
-        {/* Top Clients */}
-        <GlassCard>
-          <h3 className="font-semibold mb-6">Top Clienti per Revenue</h3>
-          <div className="space-y-4">
-            {topClients.map((client, index) => (
-              <div key={client.name} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-accent/10 flex items-center justify-center text-xs font-medium">
-                    {index + 1}
-                  </span>
-                  <div>
-                    <p className="font-medium">{client.name}</p>
-                    <p className="text-xs text-muted-foreground">{client.projects} progetti</p>
+                  <div className="w-32">
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-accent rounded-full" style={{ width: `${p.progress}%` }} />
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 text-right">{p.progress}%</div>
                   </div>
-                </div>
-                <p className="font-semibold">€{client.revenue.toLocaleString()}</p>
-              </div>
-            ))}
-          </div>
+                </button>
+              ))}
+            </div>
+          )}
         </GlassCard>
-      </div>
+      )}
     </div>
   )
 }

@@ -46,7 +46,6 @@ async function requireUser(supabase: any) {
 }
 
 async function recomputeProjectProgress(supabase: any, projectId: string) {
-  // calcolo: sum(weight DONE) / sum(weight ALL) * 100
   const { data: tasks, error } = await supabase
     .from("project_tasks")
     .select("status, weight")
@@ -54,16 +53,25 @@ async function recomputeProjectProgress(supabase: any, projectId: string) {
 
   if (error) return
 
-  const total = (tasks ?? []).reduce((acc: number, t: any) => acc + (Number(t.weight) || 0), 0)
+  const total = (tasks ?? []).reduce((a: number, t: any) => a + (Number(t.weight) || 0), 0)
   const done = (tasks ?? []).reduce(
-    (acc: number, t: any) => acc + (t.status === "DONE" ? (Number(t.weight) || 0) : 0),
+    (a: number, t: any) => a + (t.status === "DONE" ? (Number(t.weight) || 0) : 0),
     0
   )
 
   const progress = total <= 0 ? 0 : Math.round((done / total) * 100)
+  const isCompleted = progress >= 100
 
-  await supabase.from("projects").update({ progress }).eq("id", projectId)
+  await supabase
+    .from("projects")
+    .update({
+      progress,
+      completed_at: isCompleted ? new Date().toISOString() : null,
+      status: isCompleted ? "COMPLETATO" : "IN_CORSO",
+    })
+    .eq("id", projectId)
 }
+
 
 export async function GET(req: Request) {
   const supabase = await createSupabaseRouteClient()

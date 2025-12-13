@@ -166,7 +166,8 @@ const fetchTasksSilently = async () => {
     }
   }
 
-  const patchTask = async (id: string, payload: any) => {
+  type TaskPatch = Partial<Pick<Task, "title" | "status" | "weight" | "due_date" | "priority">>
+  const patchTask = async (id: string, payload: TaskPatch) => {
   // 1) optimistic update
   setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...payload } : t)))
 
@@ -191,7 +192,7 @@ const fetchTasksSilently = async () => {
 
   const moveTask = async (id: string, dir: "UP" | "DOWN") => {
   // snapshot per rollback
-  const snapshot = tasks
+  const snapshot = tasks.map(t => ({ ...t }))
 
   // 1) swap UI (optimistic)
   setTasks((prev) => {
@@ -325,7 +326,7 @@ const fetchTasksSilently = async () => {
                         <select
                           className="w-full h-10 rounded-md border bg-background px-3 text-sm"
                           value={t.status}
-                          onChange={(e) => patchTask(t.id, { status: e.target.value })}
+                          onChange={(e) => patchTask(t.id, { status: e.target.value as TaskStatus })}
                         >
                           <option value="TODO">TODO</option>
                           <option value="DOING">DOING</option>
