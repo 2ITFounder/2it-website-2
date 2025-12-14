@@ -80,7 +80,7 @@ export default function ProjectDetailPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState("")
-  const [newWeight, setNewWeight] = useState(1)
+  const [newWeight, setNewWeight] = useState<string>("1")
 
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
@@ -114,21 +114,24 @@ export default function ProjectDetailPage() {
     setError(null)
 
     try {
+      const weightNumber = Math.min(100, Math.max(1, parseInt(newWeight || "1", 10)))
+
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           project_id: projectId,
           title: newTitle.trim(),
-          weight: Number(newWeight || 1),
+          weight: weightNumber,
         }),
       })
+
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? "Errore creazione task")
 
       setCreateOpen(false)
       setNewTitle("")
-      setNewWeight(1)
+      setNewWeight("1")
       await qc.invalidateQueries({ queryKey: ["tasks", projectId] })
     } catch (e: any) {
       setError(e?.message || "Errore di rete")
@@ -136,6 +139,7 @@ export default function ProjectDetailPage() {
       setCreating(false)
     }
   }
+
 
   type TaskPatch = Partial<Pick<Task, "title" | "status" | "weight" | "due_date" | "priority">>
 
@@ -352,7 +356,14 @@ export default function ProjectDetailPage() {
 
             <div className="space-y-2">
               <Label>Peso</Label>
-              <Input type="number" min={1} max={100} value={newWeight} onChange={(e) => setNewWeight(Number(e.target.value || 1))} />
+              <Input inputMode="numeric" pattern="[0-9]*" value={newWeight} onChange={(e) => { const v = e.target.value 
+                  if (v === "" || /^\d+$/.test(v)) setNewWeight(v)
+                }}
+                onBlur={() => {
+                  if (newWeight === "") setNewWeight("1")
+                }}
+              />
+
             </div>
           </div>
 
