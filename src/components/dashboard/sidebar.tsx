@@ -28,11 +28,13 @@ export function DashboardSidebar() {
     qc.prefetchQuery({ queryKey: ["projects"], queryFn: () => apiGet("/api/projects") })
     qc.prefetchQuery({ queryKey: ["reports", "clients"], queryFn: () => apiGet("/api/reports/clients") })
     qc.prefetchQuery({ queryKey: ["reports", "projects"], queryFn: () => apiGet("/api/reports/projects") })
+    qc.prefetchQuery({ queryKey: ["settings"], queryFn: () => apiGet("/api/settings") })
 
     // ✅ Prefetch rotte (secondario, ma gratis)
     router.prefetch("/dashboard/clienti")
     router.prefetch("/dashboard/progetti")
     router.prefetch("/dashboard/report")
+    router.prefetch("/dashboard/impostazioni")
   }, [qc, router])
 
   const handleLogout = () => {

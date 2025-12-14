@@ -1,8 +1,9 @@
 import type React from "react"
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { AnimatedBackground } from "@/src/components/animated-background"
+import { AppSplash } from "@/src/components/app-splash"
 import "./globals.css"
 
 const _geist = Geist({ subsets: ["latin"] })
@@ -29,32 +30,29 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
+      { url: "/icon-light-32x32.png", media: "(prefers-color-scheme: light)" },
+      { url: "/icon-dark-32x32.png", media: "(prefers-color-scheme: dark)" },
+      { url: "/icon.svg", type: "image/svg+xml" },
     ],
     apple: "/apple-icon.png",
   },
 }
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#0b1220",
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="it">
       <body className="font-sans antialiased">
         <AnimatedBackground />
+        <AppSplash />
         {children}
         <Analytics />
       </body>

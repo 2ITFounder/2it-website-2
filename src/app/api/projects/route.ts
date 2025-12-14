@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createSupabaseRouteClient } from "../../../lib/supabase/route"
+import { notifyAdmins } from "@/src/lib/push/server"
+
 
 const ProjectTypeSchema = z.enum([
   "SITO_VETRINA",
@@ -87,19 +89,14 @@ export async function POST(req: Request) {
     client_id: parsed.data.client_id,
     title: parsed.data.title,
     description: parsed.data.description ?? null,
-
     type: parsed.data.type ?? "ALTRO",
     status: parsed.data.status ?? "LEAD",
-
     priority: parsed.data.priority ?? 3,
     progress: parsed.data.progress ?? 0,
-
     budget_cents: parsed.data.budget_cents ?? null,
     tech_stack: parsed.data.tech_stack ?? [],
-
     start_date: parsed.data.start_date ?? null,
     due_date: parsed.data.due_date ?? null,
-
     meta: parsed.data.meta ?? {},
   }
 
@@ -110,8 +107,25 @@ export async function POST(req: Request) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  // 🔔 NOTIFICA PUSH
+  try {
+    await notifyAdmins(
+      {
+        title: "Nuovo progetto",
+        body: `${user.email} ha creato il progetto "${data.title}"`,
+        url: "/dashboard/progetti",
+      },
+      { excludeUserId: user.id }
+    )
+  } catch (e) {
+    console.error("notifyAdmins failed:", e)
+  }
+
+
   return NextResponse.json({ data })
 }
+
 
 export async function PATCH(req: Request) {
   const ctx = await requireUser()

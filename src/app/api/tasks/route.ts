@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createSupabaseRouteClient } from "../../../lib/supabase/route"
+import { notifyAdmins } from "@/src/lib/push/server"
+
 
 const TaskStatusSchema = z.enum(["TODO", "DOING", "DONE"])
 
@@ -100,18 +102,17 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({}))
   const parsed = TaskCreateSchema.safeParse(body)
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
+  }
 
-  // posizione: append in fondo
-  const { data: last, error: lastErr } = await supabase
+  const { data: last } = await supabase
     .from("project_tasks")
     .select("position")
     .eq("project_id", parsed.data.project_id)
     .order("position", { ascending: false })
     .limit(1)
     .maybeSingle()
-
-  if (lastErr) return NextResponse.json({ error: lastErr.message }, { status: 400 })
 
   const nextPos = (last?.position ?? -1) + 1
 
@@ -127,13 +128,29 @@ export async function POST(req: Request) {
     position: nextPos,
   }
 
-  const { data, error } = await supabase.from("project_tasks").insert(payload).select("*").single()
+  const { data, error } = await supabase
+    .from("project_tasks")
+    .insert(payload)
+    .select("*")
+    .single()
+
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   await recomputeProjectProgress(supabase, parsed.data.project_id)
 
+  // 🔔 NOTIFICA PUSH
+  await notifyAdmins(
+    {
+      title: "Nuova task",
+      body: `${user.email} ha aggiunto la task "${data.title}"`,
+      url: `/dashboard/progetti/${parsed.data.project_id}`,
+    },
+    { excludeUserId: user.id }
+  )
+
   return NextResponse.json({ data })
 }
+
 
 export async function PATCH(req: Request) {
   const supabase = await createSupabaseRouteClient()

@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createSupabaseRouteClient } from "../../../lib/supabase/route"
+import { notifyAdmins } from "@/src/lib/push/server"
 
 const ClientCreateSchema = z.object({
   name: z.string().min(2),
+  email: z.string().email().optional().or(z.literal("")),
+  status: z.enum(["ATTIVO", "INATTIVO"]).optional(),
+})
+
+const ClientUpdateSchema = z.object({
+  name: z.string().min(2).optional(),
   email: z.string().email().optional().or(z.literal("")),
   status: z.enum(["ATTIVO", "INATTIVO"]).optional(),
 })
@@ -46,18 +53,17 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null)
   const parsed = ClientCreateSchema.safeParse(body)
   if (!parsed.success) {
-  const flat = parsed.error.flatten()
-  const msgs = [
-    ...(flat.formErrors ?? []),
-    ...Object.values(flat.fieldErrors ?? {}).flat(),
-  ].filter(Boolean)
+    const flat = parsed.error.flatten()
+    const msgs = [
+      ...(flat.formErrors ?? []),
+      ...Object.values(flat.fieldErrors ?? {}).flat(),
+    ].filter(Boolean)
 
-  return NextResponse.json(
-    { error: msgs.join(", ") || "Dati non validi" },
-    { status: 400 }
-  )
-}
-
+    return NextResponse.json(
+      { error: msgs.join(", ") || "Dati non validi" },
+      { status: 400 }
+    )
+  }
 
   const { name, email, status } = parsed.data
 
@@ -73,13 +79,23 @@ export async function POST(req: Request) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  try {
+    await notifyAdmins(
+      {
+        title: "Nuovo cliente",
+        body: `${auth.user.email} ha aggiunto ${data.name}`,
+        url: "/dashboard/clienti",
+      },
+      { excludeUserId: auth.user.id }
+    )
+  } catch (e) {
+    console.error("notifyAdmins failed:", e)
+  }
+
+
   return NextResponse.json({ data }, { status: 201 })
 }
-const ClientUpdateSchema = z.object({
-  name: z.string().min(2).optional(),
-  email: z.string().email().optional().or(z.literal("")),
-  status: z.enum(["ATTIVO", "INATTIVO"]).optional(),
-})
 
 export async function PATCH(req: Request) {
   const supabase = await createSupabaseRouteClient()

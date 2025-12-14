@@ -55,3 +55,41 @@ self.addEventListener("fetch", (event) => {
     )
   }
 })
+
+self.addEventListener("push", (event) => {
+  const data = (() => {
+    try { return event.data ? event.data.json() : {} } catch { return {} }
+  })()
+
+  const title = data.title || "2IT Gestionale"
+  const body = data.body || ""
+  const url = data.url || "/dashboard"
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { url },
+    })
+  )
+})
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close()
+  const url = event.notification?.data?.url || "/dashboard"
+
+  event.waitUntil(
+    (async () => {
+      const allClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
+      const client = allClients.find((c) => "focus" in c)
+      if (client) {
+        client.focus()
+        client.navigate(url)
+        return
+      }
+      self.clients.openWindow(url)
+    })()
+  )
+})
+

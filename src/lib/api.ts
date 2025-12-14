@@ -2,15 +2,16 @@ export async function apiGet<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, {
     signal,
     credentials: "include",
-    // IMPORTANTISSIMO: togli "no-store" dal lato client,
-    // la cache la gestirà React Query.
   })
 
-  const json = await res.json().catch(() => ({}))
+  // 204 / empty body safety
+  const text = await res.text().catch(() => "")
+  const json = text ? JSON.parse(text) : {}
 
   if (!res.ok) {
-    throw new Error(json?.error || "Errore di rete")
+    const msg = (json as any)?.error?.message ?? (json as any)?.error ?? "Errore di rete"
+    throw new Error(msg)
   }
 
-  return (json?.data ?? json) as T
+  return (((json as any)?.data ?? json) as T)
 }
