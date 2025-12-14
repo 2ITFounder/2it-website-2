@@ -1,8 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, Plus, ChevronUp, ChevronDown, Trash2 } from "lucide-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { apiGet } from "@/src/lib/api"
 
 import { Button } from "@/src/components/ui/button"
 import { Input } from "@/src/components/ui/input"
@@ -50,6 +52,9 @@ type Task = {
   position: number
 }
 
+type ProjectResp = { data: Project; error?: string }
+type TasksResp = { data: Task[]; error?: string }
+
 function clamp(n: number) {
   return Math.max(0, Math.min(100, n))
 }
@@ -66,15 +71,19 @@ function taskBorder(status: "TODO" | "DOING" | "DONE") {
   return "border-gray-200"
 }
 
+const extractErrorMessage = (err: any) => {
+  if (!err) return null
+  if (typeof err === "string") return err
+  if (typeof err?.message === "string") return err.message
+  return "Si è verificato un errore"
+}
 
 export default function ProjectDetailPage() {
   const params = useParams<{ projectId: string }>()
   const projectId = params.projectId
   const router = useRouter()
+  const qc = useQueryClient()
 
-  const [loading, setLoading] = useState(true)
-  const [project, setProject] = useState<Project | null>(null)
-  const [tasks, setTasks] = useState<Task[]>([])
   const [error, setError] = useState<string | null>(null)
 
   // create task dialog
@@ -88,60 +97,44 @@ export default function ProjectDetailPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  const {
+    data: projectRes,
+    isLoading: projectLoading,
+    error: projectError,
+  } = useQuery({
+    queryKey: ["project", projectId],
+    enabled: Boolean(projectId),
+    queryFn: ({ signal }) => apiGet<ProjectResp>(`/api/projects/${projectId}`, signal),
+  })
+
+  const {
+    data: tasksRes,
+    isLoading: tasksLoading,
+    error: tasksError,
+  } = useQuery({
+    queryKey: ["tasks", projectId],
+    enabled: Boolean(projectId),
+    queryFn: ({ signal }) => apiGet<TasksResp>(`/api/tasks?project_id=${encodeURIComponent(projectId)}`, signal),
+  })
+
+  const project = projectRes?.data ?? null
+  const tasks = Array.isArray(tasksRes?.data) ? tasksRes!.data : []
+
+  const loading = projectLoading || tasksLoading
+  const queryError = extractErrorMessage(projectError) || extractErrorMessage(tasksError)
+  const topError = error || queryError
+
   const computedProgress = useMemo(() => {
     const total = tasks.reduce((a, t) => a + (Number(t.weight) || 0), 0)
     const done = tasks.reduce((a, t) => a + (t.status === "DONE" ? (Number(t.weight) || 0) : 0), 0)
     return total <= 0 ? 0 : clamp(Math.round((done / total) * 100))
   }, [tasks])
 
-  const fetchAll = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [pRes, tRes] = await Promise.all([
-        fetch(`/api/projects/${projectId}`, { cache: "no-store" }),
-        fetch(`/api/tasks?project_id=${encodeURIComponent(projectId)}`, { cache: "no-store" }),
-      ])
-
-      const pJson = await pRes.json().catch(() => ({}))
-      const tJson = await tRes.json().catch(() => ({}))
-
-      if (!pRes.ok) throw new Error(pJson?.error || "Errore progetto")
-      if (!tRes.ok) throw new Error(tJson?.error || "Errore tasks")
-
-      setProject(pJson.data)
-      setTasks(Array.isArray(tJson.data) ? tJson.data : [])
-    } catch (e: any) {
-      setError(e?.message || "Errore di rete")
-      setProject(null)
-      setTasks([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-const fetchTasksSilently = async () => {
-  try {
-    const tRes = await fetch(`/api/tasks?project_id=${encodeURIComponent(projectId)}`, {
-      cache: "no-store",
-    })
-    const tJson = await tRes.json().catch(() => ({}))
-    if (!tRes.ok) throw new Error(tJson?.error || "Errore tasks")
-    setTasks(Array.isArray(tJson.data) ? tJson.data : [])
-  } catch (e: any) {
-    setError(e?.message || "Errore di rete")
-  }
-}
-
-
-  useEffect(() => {
-    fetchAll()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId])
-
   const createTask = async () => {
     if (!newTitle.trim()) return
     setCreating(true)
+    setError(null)
+
     try {
       const res = await fetch("/api/tasks", {
         method: "POST",
@@ -158,7 +151,7 @@ const fetchTasksSilently = async () => {
       setCreateOpen(false)
       setNewTitle("")
       setNewWeight(1)
-      await fetchAll()
+      await qc.invalidateQueries({ queryKey: ["tasks", projectId] })
     } catch (e: any) {
       setError(e?.message || "Errore di rete")
     } finally {
@@ -167,65 +160,60 @@ const fetchTasksSilently = async () => {
   }
 
   type TaskPatch = Partial<Pick<Task, "title" | "status" | "weight" | "due_date" | "priority">>
+
   const patchTask = async (id: string, payload: TaskPatch) => {
-  // 1) optimistic update
-  setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...payload } : t)))
-
-  try {
-    const res = await fetch("/api/tasks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, ...payload }),
+    // 1) optimistic update (React Query cache)
+    qc.setQueryData<TasksResp>(["tasks", projectId], (prev) => {
+      if (!prev?.data) return prev
+      return { ...prev, data: prev.data.map((t) => (t.id === id ? { ...t, ...payload } : t)) }
     })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? "Errore update task")
 
-    // 2) NON fetchAll qui (evita glitch)
-    // opzionale: se vuoi riallineare ogni tot, lo faremo più avanti
-  } catch (e: any) {
-    setError(e?.message || "Errore di rete")
-    // rollback semplice: ricarico solo se fallisce
-    await fetchAll()
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...payload }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? "Errore update task")
+    } catch (e: any) {
+      setError(e?.message || "Errore di rete")
+      await qc.invalidateQueries({ queryKey: ["tasks", projectId] })
+    }
   }
-}
-
 
   const moveTask = async (id: string, dir: "UP" | "DOWN") => {
-  // snapshot per rollback
-  const snapshot = tasks.map(t => ({ ...t }))
+    // snapshot per rollback
+    const snapshot = qc.getQueryData<TasksResp>(["tasks", projectId])
 
-  // 1) swap UI (optimistic)
-  setTasks((prev) => {
-    const i = prev.findIndex((t) => t.id === id)
-    if (i === -1) return prev
-    const j = dir === "UP" ? i - 1 : i + 1
-    if (j < 0 || j >= prev.length) return prev
-
-    const next = [...prev]
-    ;[next[i], next[j]] = [next[j], next[i]]
-    return next
-  })
-
-  // 2) persisti sul DB (background)
-  try {
-    const res = await fetch("/api/tasks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, move: dir }),
+    // 1) swap UI (optimistic)
+    qc.setQueryData<TasksResp>(["tasks", projectId], (prev) => {
+      if (!prev?.data) return prev
+      const i = prev.data.findIndex((t) => t.id === id)
+      if (i === -1) return prev
+      const j = dir === "UP" ? i - 1 : i + 1
+      if (j < 0 || j >= prev.data.length) return prev
+      const next = [...prev.data]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return { ...prev, data: next }
     })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? "Errore move task")
 
-    // 3) riallineo in modo “silenzioso” (niente glitch)
-    await fetchTasksSilently()
-  } catch (e: any) {
-    setError(e?.message || "Errore di rete")
-    // rollback UI
-    setTasks(snapshot)
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, move: dir }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? "Errore move task")
+
+      // riallineo silenzioso
+      await qc.invalidateQueries({ queryKey: ["tasks", projectId] })
+    } catch (e: any) {
+      setError(e?.message || "Errore di rete")
+      if (snapshot) qc.setQueryData(["tasks", projectId], snapshot)
+    }
   }
-}
-
-
 
   const askDelete = (t: Task) => {
     setDeleteTarget({ id: t.id, title: t.title })
@@ -235,6 +223,8 @@ const fetchTasksSilently = async () => {
   const confirmDelete = async () => {
     if (!deleteTarget) return
     setDeleting(true)
+    setError(null)
+
     try {
       const res = await fetch(`/api/tasks?id=${encodeURIComponent(deleteTarget.id)}`, { method: "DELETE" })
       const json = await res.json().catch(() => ({}))
@@ -242,7 +232,7 @@ const fetchTasksSilently = async () => {
 
       setDeleteOpen(false)
       setDeleteTarget(null)
-      await fetchAll()
+      await qc.invalidateQueries({ queryKey: ["tasks", projectId] })
     } catch (e: any) {
       setError(e?.message || "Errore di rete")
     } finally {
@@ -274,7 +264,7 @@ const fetchTasksSilently = async () => {
         </Button>
       </div>
 
-      {error && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
+      {topError && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{topError}</div>}
 
       {/* Progress bar */}
       <GlassCard>
@@ -308,7 +298,10 @@ const fetchTasksSilently = async () => {
                       value={t.title}
                       onChange={(e) => {
                         const v = e.target.value
-                        setTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, title: v } : x)))
+                        qc.setQueryData<TasksResp>(["tasks", projectId], (prev) => {
+                          if (!prev?.data) return prev
+                          return { ...prev, data: prev.data.map((x) => (x.id === t.id ? { ...x, title: v } : x)) }
+                        })
                       }}
                       onBlur={() => patchTask(t.id, { title: t.title })}
                       className="font-medium"
@@ -318,9 +311,9 @@ const fetchTasksSilently = async () => {
                       <div className="space-y-1 sm:col-span-3">
                         <Label>Status</Label>
                         <div className="flex items-center gap-2">
-                            <span className={`text-xs px-2 py-1 rounded-full ${taskStatusPill(t.status)}`}>
-                                {t.status}
-                            </span>
+                          <span className={`text-xs px-2 py-1 rounded-full ${taskStatusPill(t.status)}`}>
+                            {t.status}
+                          </span>
                         </div>
 
                         <select
@@ -343,7 +336,10 @@ const fetchTasksSilently = async () => {
                           value={t.weight}
                           onChange={(e) => {
                             const v = Number(e.target.value || 1)
-                            setTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, weight: v } : x)))
+                            qc.setQueryData<TasksResp>(["tasks", projectId], (prev) => {
+                              if (!prev?.data) return prev
+                              return { ...prev, data: prev.data.map((x) => (x.id === t.id ? { ...x, weight: v } : x)) }
+                            })
                           }}
                           onBlur={() => patchTask(t.id, { weight: t.weight })}
                         />
@@ -405,7 +401,13 @@ const fetchTasksSilently = async () => {
 
             <div className="space-y-2">
               <Label>Peso</Label>
-              <Input type="number" min={1} max={100} value={newWeight} onChange={(e) => setNewWeight(Number(e.target.value || 1))} />
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                value={newWeight}
+                onChange={(e) => setNewWeight(Number(e.target.value || 1))}
+              />
             </div>
           </div>
 

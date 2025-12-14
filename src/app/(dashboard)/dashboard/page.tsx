@@ -1,8 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { Users, FolderKanban, CheckCircle2, ListTodo, ArrowUpRight, ArrowDownRight } from "lucide-react"
+import { useMemo } from "react"
+import { Users, FolderKanban, CheckCircle2, ListTodo, ArrowUpRight } from "lucide-react"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
+import { useQuery } from "@tanstack/react-query"
+import { apiGet } from "@/src/lib/api"
 
 type SummaryResponse = {
   data: {
@@ -24,39 +26,32 @@ const statusBadge = (status: string) => {
   return "bg-blue-100 text-blue-700"
 }
 
+const extractErrorMessage = (err: any) => {
+  if (!err) return null
+  if (typeof err === "string") return err
+  if (typeof err?.message === "string") return err.message
+  return "Si è verificato un errore"
+}
+
 export default function DashboardPage() {
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [kpi, setKpi] = useState<SummaryResponse["data"]["kpi"]>({
+  const {
+    data,
+    isLoading: loading,
+    error,
+  } = useQuery({
+    queryKey: ["dashboardSummary"],
+    queryFn: ({ signal }) => apiGet<SummaryResponse>("/api/dashboard/summary", signal),
+  })
+
+  const kpi = data?.data?.kpi ?? {
     clientsTotal: 0,
     projectsActive: 0,
     projectsCompleted: 0,
     tasksDoing: 0,
-  })
-  const [recentProjects, setRecentProjects] = useState<SummaryResponse["data"]["recentProjects"]>([])
-
-  const fetchSummary = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch("/api/dashboard/summary", { cache: "no-store" })
-      const json = (await res.json().catch(() => ({}))) as SummaryResponse
-      if (!res.ok) {
-        setError(json?.error || "Errore nel caricamento KPI")
-        return
-      }
-      setKpi(json.data.kpi)
-      setRecentProjects(json.data.recentProjects)
-    } catch {
-      setError("Errore di rete. Riprova.")
-    } finally {
-      setLoading(false)
-    }
   }
 
-  useEffect(() => {
-    fetchSummary()
-  }, [])
+  const recentProjects = data?.data?.recentProjects ?? []
+  const errorMsg = extractErrorMessage(error)
 
   const stats = useMemo(
     () => [
@@ -70,7 +65,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      {error && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
+      {errorMsg && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{errorMsg}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat) => (

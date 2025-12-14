@@ -4,9 +4,11 @@ import { Search, Plus, MoreHorizontal } from "lucide-react"
 import { Button } from "@/src/components/ui/button"
 import { Input } from "@/src/components/ui/input"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { useClients } from "@/src/hooks/useClients"
 
-// ⬇️ serve shadcn dialog + label (probabilmente li hai già)
+// ⬇️ shadcn dialog + label
 import {
   Dialog,
   DialogContent,
@@ -36,7 +38,6 @@ import {
   AlertDialogCancel,
 } from "@/src/components/ui/alert-dialog"
 
-
 type ClientRow = {
   id: string
   name: string
@@ -65,11 +66,17 @@ const extractErrorMessage = (err: any) => {
 }
 
 export default function ClientiPage() {
+  const qc = useQueryClient()
+
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("")
-  const [clients, setClients] = useState<ClientRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [pageError, setPageError] = useState<string | null>(null)
+
+  // Query (cache condivisa)
+  const { data, isLoading, error } = useClients()
+  const clients: ClientRow[] = useMemo(() => (Array.isArray(data) ? (data as ClientRow[]) : []), [data])
+  const loading = isLoading
+  const queryErrorMsg = extractErrorMessage(error)
 
   // modal state
   const [open, setOpen] = useState(false)
@@ -80,6 +87,7 @@ export default function ClientiPage() {
     email: "",
     status: "ATTIVO",
   })
+
   const [editOpen, setEditOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
@@ -90,148 +98,105 @@ export default function ClientiPage() {
     email: "",
     status: "ATTIVO",
   })
+
   const openEdit = (client: ClientRow) => {
-  setEditError(null)
-  setEditClientId(client.id)
-  setEditForm({
-    name: client.name,
-    email: client.email ?? "",
-    status: (client.status === "INATTIVO" ? "INATTIVO" : "ATTIVO") as "ATTIVO" | "INATTIVO",
-  })
-  setEditOpen(true)
-}
-
-const [deleteOpen, setDeleteOpen] = useState(false)
-const [deleting, setDeleting] = useState(false)
-const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
-
-const askDelete = (client: ClientRow) => {
-  setError(null)
-  setDeleteTarget({ id: client.id, name: client.name })
-  setDeleteOpen(true)
-}
-
-const confirmDelete = async () => {
-  if (!deleteTarget) return
-  setDeleting(true)
-  try {
-    const res = await fetch(`/api/clients?id=${encodeURIComponent(deleteTarget.id)}`, { method: "DELETE" })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      setError(extractErrorMessage(json?.error) || "Errore nell'eliminazione cliente")
-      return
-    }
-    setDeleteOpen(false)
-    setDeleteTarget(null)
-    await fetchClients()
-  } catch {
-    setError("Errore di rete. Riprova.")
-  } finally {
-    setDeleting(false)
-  }
-}
-
-
-const submitUpdate = async () => {
-  setEditError(null)
-  if (!editClientId) return
-
-  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-
-  if (!editForm.name || editForm.name.trim().length < 2) {
-    setEditError("Il nome deve essere di almeno 2 caratteri")
-    return
-  }
-
-  if (editForm.email?.trim() && !isValidEmail(editForm.email.trim())) {
-    setEditError("Inserisci un'email valida")
-    return
-  }
-
-  setEditing(true)
-  try {
-    const res = await fetch(`/api/clients?id=${encodeURIComponent(editClientId)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: editForm.name.trim(),
-        email: editForm.email?.trim() || "",
-        status: editForm.status || "ATTIVO",
-      }),
+    setPageError(null)
+    setEditError(null)
+    setEditClientId(client.id)
+    setEditForm({
+      name: client.name,
+      email: client.email ?? "",
+      status: (client.status === "INATTIVO" ? "INATTIVO" : "ATTIVO") as "ATTIVO" | "INATTIVO",
     })
-
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      setEditError(extractErrorMessage(json?.error) || "Errore nella modifica cliente")
-      return
-    }
-
-    setConfirmEditOpen(false)
-    setEditOpen(false)
-    setEditClientId(null)
-    await fetchClients()
-  } catch {
-    setEditError("Errore di rete. Riprova.")
-  } finally {
-    setEditing(false)
+    setEditOpen(true)
   }
-}
 
-// Questo è il click del bottone “Salva Modifiche”
-const onUpdate = () => {
-  setEditError(null)
-  setConfirmEditOpen(true)
-}
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
+  const askDelete = (client: ClientRow) => {
+    setPageError(null)
+    setDeleteTarget({ id: client.id, name: client.name })
+    setDeleteOpen(true)
+  }
 
-
-
-  const fetchClients = async () => {
-    setLoading(true)
-    setError(null)
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setPageError(null)
 
     try {
-      const params = new URLSearchParams()
-      if (query.trim()) params.set("q", query.trim())
-      if (statusFilter) params.set("status", statusFilter)
-
-      const res = await fetch(`/api/clients?${params.toString()}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
+      const res = await fetch(`/api/clients?id=${encodeURIComponent(deleteTarget.id)}`, {
+        method: "DELETE",
+        credentials: "include",
       })
-
       const json = await res.json().catch(() => ({}))
-
       if (!res.ok) {
-        setError(json?.error || "Errore nel caricamento clienti")
-        setClients([])
+        setPageError(extractErrorMessage(json?.error) || "Errore nell'eliminazione cliente")
         return
       }
 
-      setClients(Array.isArray(json?.data) ? json.data : [])
+      setDeleteOpen(false)
+      setDeleteTarget(null)
+      await qc.invalidateQueries({ queryKey: ["clients"] })
     } catch {
-      setError("Errore di rete. Riprova.")
-      setClients([])
+      setPageError("Errore di rete. Riprova.")
     } finally {
-      setLoading(false)
+      setDeleting(false)
     }
   }
 
-  useEffect(() => {
-    fetchClients()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const submitUpdate = async () => {
+    setEditError(null)
+    if (!editClientId) return
 
-  useEffect(() => {
-    const t = setTimeout(() => {
-      fetchClients()
-    }, 350)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, statusFilter])
+    const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 
-  const rows = useMemo(() => clients, [clients])
+    if (!editForm.name || editForm.name.trim().length < 2) {
+      setEditError("Il nome deve essere di almeno 2 caratteri")
+      return
+    }
+
+    if (editForm.email?.trim() && !isValidEmail(editForm.email.trim())) {
+      setEditError("Inserisci un'email valida")
+      return
+    }
+
+    setEditing(true)
+    try {
+      const res = await fetch(`/api/clients?id=${encodeURIComponent(editClientId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          email: editForm.email?.trim() || "",
+          status: editForm.status || "ATTIVO",
+        }),
+      })
+
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setEditError(extractErrorMessage(json?.error) || "Errore nella modifica cliente")
+        return
+      }
+
+      setConfirmEditOpen(false)
+      setEditOpen(false)
+      setEditClientId(null)
+      await qc.invalidateQueries({ queryKey: ["clients"] })
+    } catch {
+      setEditError("Errore di rete. Riprova.")
+    } finally {
+      setEditing(false)
+    }
+  }
+
+  const onUpdate = () => {
+    setEditError(null)
+    setConfirmEditOpen(true)
+  }
 
   const resetForm = () => {
     setCreateError(null)
@@ -240,9 +205,9 @@ const onUpdate = () => {
 
   const onCreate = async () => {
     setCreateError(null)
+    setPageError(null)
 
-    const isValidEmail = (email: string) =>
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 
     if (!form.name || form.name.trim().length < 2) {
       setCreateError("Il nome deve essere di almeno 2 caratteri")
@@ -259,6 +224,7 @@ const onUpdate = () => {
       const res = await fetch("/api/clients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           name: form.name.trim(),
           email: form.email?.trim() || "",
@@ -267,7 +233,6 @@ const onUpdate = () => {
       })
 
       const json = await res.json().catch(() => ({}))
-
       if (!res.ok) {
         setCreateError(extractErrorMessage(json?.error) || "Errore nella creazione cliente")
         return
@@ -275,13 +240,29 @@ const onUpdate = () => {
 
       setOpen(false)
       resetForm()
-      await fetchClients()
+      await qc.invalidateQueries({ queryKey: ["clients"] })
     } catch {
       setCreateError("Errore di rete. Riprova.")
     } finally {
       setCreating(false)
     }
   }
+
+  // Filtri lato client (per ora)
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return clients.filter((c) => {
+      const okQ =
+        !q ||
+        c.name.toLowerCase().includes(q) ||
+        (c.email ?? "").toLowerCase().includes(q)
+
+      const okStatus = !statusFilter || c.status === statusFilter
+      return okQ && okStatus
+    })
+  }, [clients, query, statusFilter])
+
+  const topError = pageError || queryErrorMsg
 
   return (
     <div className="space-y-6">
@@ -346,15 +327,15 @@ const onUpdate = () => {
                 </select>
               </div>
 
-              {createError && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{createError}</div>}
+              {createError && (
+                <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+                  {createError}
+                </div>
+              )}
             </div>
 
             <DialogFooter className="mt-6 gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setOpen(false)}
-                disabled={creating}
-              >
+              <Button variant="outline" onClick={() => setOpen(false)} disabled={creating}>
                 Annulla
               </Button>
               <Button className="glow-button" onClick={onCreate} disabled={creating}>
@@ -403,7 +384,11 @@ const onUpdate = () => {
                 </select>
               </div>
 
-              {editError && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{editError}</div>}
+              {editError && (
+                <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+                  {editError}
+                </div>
+              )}
             </div>
 
             <DialogFooter className="mt-6 gap-2">
@@ -423,9 +408,7 @@ const onUpdate = () => {
               <DialogTitle>Conferma modifiche</DialogTitle>
             </DialogHeader>
 
-            <p className="text-sm text-muted-foreground">
-              Vuoi applicare le modifiche a questo cliente?
-            </p>
+            <p className="text-sm text-muted-foreground">Vuoi applicare le modifiche a questo cliente?</p>
 
             <DialogFooter className="mt-6 gap-2">
               <Button variant="outline" onClick={() => setConfirmEditOpen(false)} disabled={editing}>
@@ -437,44 +420,49 @@ const onUpdate = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-
       </div>
 
       {/* Search */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input placeholder="Cerca clienti..." className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <Input
+          placeholder="Cerca clienti..."
+          className="pl-10"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
 
-      {error && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
+      {topError && (
+        <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{topError}</div>
+      )}
 
       <AlertDialog open={deleteOpen} onOpenChange={(v: boolean) => setDeleteOpen(v)}>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Eliminare cliente?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    {deleteTarget
-                      ? `Stai per eliminare "${deleteTarget.name}". Questa azione è definitiva.`
-                      : "Questa azione è definitiva."}
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminare cliente?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget
+                ? `Stai per eliminare "${deleteTarget.name}". Questa azione è definitiva.`
+                : "Questa azione è definitiva."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
 
-                <AlertDialogFooter>
-                  <AlertDialogCancel disabled={deleting}>Annulla</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={(e) => {
-                    e.preventDefault()
-                    confirmDelete()
-                    }}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    disabled={deleting}
-                  >
-                    {deleting ? "Eliminazione..." : "Elimina"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                confirmDelete()
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+            >
+              {deleting ? "Eliminazione..." : "Elimina"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Table */}
       <GlassCard className="overflow-hidden p-0">
@@ -521,24 +509,24 @@ const onUpdate = () => {
                         </span>
                       </td>
                       <td className="p-4 text-right">
-                         <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
 
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => openEdit(client)}>Modifica</DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => askDelete(client)}
-                                className="text-destructive focus:text-destructive"
-                                >
-                                Elimina
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                         </DropdownMenu>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEdit(client)}>Modifica</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => askDelete(client)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              Elimina
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </td>
                     </tr>
                   )

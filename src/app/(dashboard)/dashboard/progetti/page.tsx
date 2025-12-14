@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { ProjectsToolbar } from "./_components/projects-toolbar"
 import { ProjectsGrid } from "./_components/projects-grid"
@@ -14,11 +15,9 @@ import { ClientRow, ProjectRow, ProjectStatus, STATUS_LABEL, extractErrorMessage
 
 export default function ProgettiDashboardPage() {
   const router = useRouter()
+  const qc = useQueryClient()
 
   const [query, setQuery] = useState("")
-  const [projects, setProjects] = useState<ProjectRow[]>([])
-  const [clients, setClients] = useState<ClientRow[]>([])
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   // dialogs
@@ -29,6 +28,29 @@ export default function ProgettiDashboardPage() {
 
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
+
+  const {
+    data: clients = [],
+    isLoading: clientsLoading,
+    error: clientsError,
+  } = useQuery({
+    queryKey: ["clients"],
+    queryFn: () => apiGetClients(),
+  })
+
+  const {
+    data: projects = [],
+    isLoading: projectsLoading,
+    error: projectsError,
+  } = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => apiGetProjects(),
+  })
+
+  const loading = clientsLoading || projectsLoading
+
+  const queryError = extractErrorMessage(clientsError) || extractErrorMessage(projectsError)
+  const topError = error || queryError
 
   const clientNameById = useMemo(() => {
     const map = new Map(clients.map((c) => [c.id, c.name] as const))
@@ -50,26 +72,6 @@ export default function ProgettiDashboardPage() {
     })
   }, [projects, query, clientNameById])
 
-  const fetchAll = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [c, p] = await Promise.all([apiGetClients(), apiGetProjects()])
-      setClients(c)
-      setProjects(p)
-    } catch (e: any) {
-      setError(extractErrorMessage(e) || "Errore di rete. Riprova.")
-      setProjects([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchAll()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // actions
   const handleCreate = async (payload: {
     client_id: string
@@ -85,7 +87,7 @@ export default function ProgettiDashboardPage() {
       status: payload.status,
       due_date: payload.due_date,
     })
-    await fetchAll()
+    await qc.invalidateQueries({ queryKey: ["projects"] })
   }
 
   const handleEditOpen = (p: ProjectRow) => {
@@ -110,7 +112,7 @@ export default function ProgettiDashboardPage() {
       status: args.payload.status,
       due_date: args.payload.due_date,
     })
-    await fetchAll()
+    await qc.invalidateQueries({ queryKey: ["projects"] })
   }
 
   const handleAskDelete = (p: ProjectRow) => {
@@ -120,23 +122,18 @@ export default function ProgettiDashboardPage() {
 
   const handleDelete = async (id: string) => {
     await apiDeleteProject(id)
-    await fetchAll()
+    await qc.invalidateQueries({ queryKey: ["projects"] })
   }
 
   const openDetail = (p: ProjectRow) => {
-    // route che creeremo subito dopo
     router.push(`/dashboard/progetti/${p.id}`)
   }
 
   return (
     <div className="space-y-6">
-      <ProjectsToolbar
-        query={query}
-        onQueryChange={setQuery}
-        onOpenCreate={() => setCreateOpen(true)}
-      />
+      <ProjectsToolbar query={query} onQueryChange={setQuery} onOpenCreate={() => setCreateOpen(true)} />
 
-      {error && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
+      {topError && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{topError}</div>}
 
       <ProjectsGrid
         loading={loading}

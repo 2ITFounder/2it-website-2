@@ -1,9 +1,11 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { Button } from "@/src/components/ui/button"
 import { useRouter } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
+import { apiGet } from "@/src/lib/api"
 
 type ClientRow = {
   id: string
@@ -28,43 +30,43 @@ type ProjectRow = {
   nextDue: string | null
 }
 
+type ClientsReportResp = { data: ClientRow[]; error?: string }
+type ProjectsReportResp = { data: ProjectRow[]; error?: string }
+
+const extractErrorMessage = (err: any) => {
+  if (!err) return null
+  if (typeof err === "string") return err
+  if (typeof err?.message === "string") return err.message
+  return "Si è verificato un errore"
+}
+
 export default function ReportPage() {
   const [tab, setTab] = useState<"clients" | "projects">("clients")
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
-  const [clients, setClients] = useState<ClientRow[]>([])
-  const [projects, setProjects] = useState<ProjectRow[]>([])
+  const {
+    data: clientsRes,
+    isLoading: loadingClients,
+    error: clientsError,
+  } = useQuery({
+    queryKey: ["reports", "clients"],
+    queryFn: ({ signal }) => apiGet<ClientsReportResp>("/api/reports/clients", signal),
+  })
 
-  const fetchAll = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [cRes, pRes] = await Promise.all([
-        fetch("/api/reports/clients", { cache: "no-store" }),
-        fetch("/api/reports/projects", { cache: "no-store" }),
-      ])
-      const cJson = await cRes.json().catch(() => ({}))
-      const pJson = await pRes.json().catch(() => ({}))
+  const {
+    data: projectsRes,
+    isLoading: loadingProjects,
+    error: projectsError,
+  } = useQuery({
+    queryKey: ["reports", "projects"],
+    queryFn: ({ signal }) => apiGet<ProjectsReportResp>("/api/reports/projects", signal),
+  })
 
-      if (!cRes.ok) throw new Error(cJson?.error || "Errore report clienti")
-      if (!pRes.ok) throw new Error(pJson?.error || "Errore report progetti")
+  const clients = Array.isArray(clientsRes?.data) ? clientsRes!.data : []
+  const projects = Array.isArray(projectsRes?.data) ? projectsRes!.data : []
 
-      setClients(Array.isArray(cJson.data) ? cJson.data : [])
-      setProjects(Array.isArray(pJson.data) ? pJson.data : [])
-    } catch (e: any) {
-      setError(e?.message || "Errore di rete")
-      setClients([])
-      setProjects([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchAll()
-  }, [])
+  const loading = loadingClients || loadingProjects
+  const errorMsg = extractErrorMessage(clientsError) || extractErrorMessage(projectsError)
 
   const clientsTop = useMemo(() => clients.slice(0, 5), [clients])
 
@@ -83,7 +85,7 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {error && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
+      {errorMsg && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{errorMsg}</div>}
 
       {loading ? (
         <div className="text-muted-foreground">Caricamento…</div>
@@ -100,8 +102,7 @@ export default function ReportPage() {
                     key={c.id}
                     onClick={() => router.push(`/dashboard/clienti/${c.id}/report`)}
                     className="w-full text-left flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition"
-                    >
-
+                  >
                     <div>
                       <div className="font-medium">{c.name}</div>
                       <div className="text-xs text-muted-foreground">
@@ -126,7 +127,11 @@ export default function ReportPage() {
             ) : (
               <div className="space-y-2">
                 {clients.map((c) => (
-                   <button key={c.id} className="p-3 rounded-lg bg-muted/50 flex items-center justify-between" onClick={() => router.push(`/dashboard/clienti/${c.id}/report`)}>
+                  <button
+                    key={c.id}
+                    className="p-3 rounded-lg bg-muted/50 flex items-center justify-between"
+                    onClick={() => router.push(`/dashboard/clienti/${c.id}/report`)}
+                  >
                     <div className="min-w-0">
                       <div className="font-medium truncate">{c.name}</div>
                       <div className="text-xs text-muted-foreground">
@@ -159,7 +164,7 @@ export default function ReportPage() {
                   key={p.id}
                   onClick={() => router.push(`/dashboard/progetti/${p.id}`)}
                   className="w-full text-left p-3 rounded-lg bg-muted/50 hover:bg-muted transition flex items-center justify-between gap-4"
-                  >
+                >
                   <div className="min-w-0">
                     <div className="font-medium truncate">{p.title}</div>
                     <div className="text-xs text-muted-foreground">
