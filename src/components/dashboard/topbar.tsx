@@ -12,6 +12,7 @@ const navItems = [
   { href: "/dashboard/clienti", label: "Clienti" },
   { href: "/dashboard/progetti", label: "Progetti" },
   { href: "/dashboard/report", label: "Report" },
+  { href: "/dashboard/impostazioni", label: "Impostazioni" },
 ]
 
 export function DashboardTopbar() {
