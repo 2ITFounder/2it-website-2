@@ -182,48 +182,72 @@ export default function ImpostazioniPage() {
   }
 
   async function handleTogglePush(checked: boolean) {
-    setOk(null); setError(null)
+  setOk(null)
+  setError(null)
 
-    const prev = notifications.push
-    setNotifications((s) => ({ ...s, push: checked }))
+  const prev = notifications.push
 
-    try {
-      if (checked) {
-        const sub = await subscribePush()
+  // UI ottimistica
+  setNotifications((s) => ({ ...s, push: checked }))
 
-        const res = await fetch("/api/push/subscribe", {
+  try {
+    if (checked) {
+      // 1) subscribe browser
+      const sub = await subscribePush()
+
+      // 2) salva subscription
+      const res = await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error ?? "Errore subscribe push")
+
+      // 3) 🔴 SALVA ESPLICITAMENTE push = true
+      await saveMutation.mutateAsync({
+        first_name: profile.first_name || null,
+        last_name: profile.last_name || null,
+        email: profile.email || null,
+        notifications_email: notifications.email,
+        notifications_push: true,
+        notifications_weekly: notifications.weekly,
+      })
+    } else {
+      // unsubscribe
+      const reg = await ensureServiceWorkerReady()
+      const sub = await reg.pushManager.getSubscription()
+      const endpoint = sub?.endpoint
+
+      await unsubscribePush()
+
+      if (endpoint) {
+        await fetch("/api/push/unsubscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(sub),
-        })
-        const json = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(json?.error ?? "Errore subscribe push")
-
-        await saveMutation.mutateAsync(buildPayload({ notifications_push: true }))
-      } else {
-        const reg = await ensureServiceWorkerReady()
-        const sub = await reg.pushManager.getSubscription()
-        const endpoint = sub?.endpoint
-
-        await unsubscribePush()
-
-        if (endpoint) {
-          await fetch("/api/push/unsubscribe", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ endpoint }),
-          }).catch(() => {})
-        }
-
-        await saveMutation.mutateAsync(buildPayload({ notifications_push: false }))
+          body: JSON.stringify({ endpoint }),
+        }).catch(() => {})
       }
 
-      setOk("Notifiche push aggiornate ✅")
-    } catch (e: any) {
-      setNotifications((s) => ({ ...s, push: prev }))
-      setError(e?.message || "Errore gestione notifiche push")
+      // 🔴 SALVA ESPLICITAMENTE push = false
+      await saveMutation.mutateAsync({
+        first_name: profile.first_name || null,
+        last_name: profile.last_name || null,
+        email: profile.email || null,
+        notifications_email: notifications.email,
+        notifications_push: false,
+        notifications_weekly: notifications.weekly,
+      })
     }
+
+    setOk("Notifiche push aggiornate ✅")
+  } catch (e: any) {
+    // rollback UI
+    setNotifications((s) => ({ ...s, push: prev }))
+    setError(e?.message || "Errore gestione notifiche push")
   }
+}
+
 
   async function handleSaveAll() {
     setOk(null); setError(null)
