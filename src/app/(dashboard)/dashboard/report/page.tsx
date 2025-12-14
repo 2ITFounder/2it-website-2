@@ -30,9 +30,6 @@ type ProjectRow = {
   nextDue: string | null
 }
 
-type ClientsReportResp = { data: ClientRow[]; error?: string }
-type ProjectsReportResp = { data: ProjectRow[]; error?: string }
-
 const extractErrorMessage = (err: any) => {
   if (!err) return null
   if (typeof err === "string") return err
@@ -45,25 +42,22 @@ export default function ReportPage() {
   const router = useRouter()
 
   const {
-    data: clientsRes,
+    data: clients = [],
     isLoading: loadingClients,
     error: clientsError,
   } = useQuery({
     queryKey: ["reports", "clients"],
-    queryFn: ({ signal }) => apiGet<ClientsReportResp>("/api/reports/clients", signal),
+    queryFn: ({ signal }) => apiGet<ClientRow[]>("/api/reports/clients", signal),
   })
 
   const {
-    data: projectsRes,
+    data: projects = [],
     isLoading: loadingProjects,
     error: projectsError,
   } = useQuery({
     queryKey: ["reports", "projects"],
-    queryFn: ({ signal }) => apiGet<ProjectsReportResp>("/api/reports/projects", signal),
+    queryFn: ({ signal }) => apiGet<ProjectRow[]>("/api/reports/projects", signal),
   })
-
-  const clients = Array.isArray(clientsRes?.data) ? clientsRes!.data : []
-  const projects = Array.isArray(projectsRes?.data) ? projectsRes!.data : []
 
   const loading = loadingClients || loadingProjects
   const errorMsg = extractErrorMessage(clientsError) || extractErrorMessage(projectsError)

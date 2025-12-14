@@ -6,17 +6,14 @@ import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { useQuery } from "@tanstack/react-query"
 import { apiGet } from "@/src/lib/api"
 
-type SummaryResponse = {
-  data: {
-    kpi: {
-      clientsTotal: number
-      projectsActive: number
-      projectsCompleted: number
-      tasksDoing: number
-    }
-    recentProjects: { id: string; name: string; client: string; status: string; progress: number }[]
+type DashboardSummaryData = {
+  kpi: {
+    clientsTotal: number
+    projectsActive: number
+    projectsCompleted: number
+    tasksDoing: number
   }
-  error?: string
+  recentProjects: { id: string; name: string; client: string; status: string; progress: number }[]
 }
 
 const statusBadge = (status: string) => {
@@ -40,17 +37,17 @@ export default function DashboardPage() {
     error,
   } = useQuery({
     queryKey: ["dashboardSummary"],
-    queryFn: ({ signal }) => apiGet<SummaryResponse>("/api/dashboard/summary", signal),
+    queryFn: ({ signal }) => apiGet<DashboardSummaryData>("/api/dashboard/summary", signal),
   })
 
-  const kpi = data?.data?.kpi ?? {
+  const kpi = data?.kpi ?? {
     clientsTotal: 0,
     projectsActive: 0,
     projectsCompleted: 0,
     tasksDoing: 0,
   }
 
-  const recentProjects = data?.data?.recentProjects ?? []
+  const recentProjects = data?.recentProjects ?? []
   const errorMsg = extractErrorMessage(error)
 
   const stats = useMemo(
