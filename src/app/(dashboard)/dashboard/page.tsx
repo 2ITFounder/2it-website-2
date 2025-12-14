@@ -31,11 +31,7 @@ const extractErrorMessage = (err: any) => {
 }
 
 export default function DashboardPage() {
-  const {
-    data,
-    isLoading: loading,
-    error,
-  } = useQuery({
+  const { data, isLoading: loading, error } = useQuery({
     queryKey: ["dashboardSummary"],
     queryFn: ({ signal }) => apiGet<DashboardSummaryData>("/api/dashboard/summary", signal),
   })
@@ -46,7 +42,6 @@ export default function DashboardPage() {
     projectsCompleted: 0,
     tasksDoing: 0,
   }
-
   const recentProjects = data?.recentProjects ?? []
   const errorMsg = extractErrorMessage(error)
 

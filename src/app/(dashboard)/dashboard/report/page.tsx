@@ -41,20 +41,12 @@ export default function ReportPage() {
   const [tab, setTab] = useState<"clients" | "projects">("clients")
   const router = useRouter()
 
-  const {
-    data: clients = [],
-    isLoading: loadingClients,
-    error: clientsError,
-  } = useQuery({
+  const { data: clients = [], isLoading: loadingClients, error: clientsError } = useQuery({
     queryKey: ["reports", "clients"],
     queryFn: ({ signal }) => apiGet<ClientRow[]>("/api/reports/clients", signal),
   })
 
-  const {
-    data: projects = [],
-    isLoading: loadingProjects,
-    error: projectsError,
-  } = useQuery({
+  const { data: projects = [], isLoading: loadingProjects, error: projectsError } = useQuery({
     queryKey: ["reports", "projects"],
     queryFn: ({ signal }) => apiGet<ProjectRow[]>("/api/reports/projects", signal),
   })

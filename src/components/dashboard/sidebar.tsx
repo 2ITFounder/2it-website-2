@@ -1,9 +1,12 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { LayoutDashboard, Users, FileBarChart, Settings, LogOut, FolderKanban } from "lucide-react"
 import { cn } from "@/src/lib/utils"
+import { useEffect } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { apiGet } from "@/src/lib/api"
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -15,13 +18,24 @@ const navItems = [
 
 export function DashboardSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const qc = useQueryClient()
+
+  // ✅ Prefetch 1 volta quando entri in dashboard (migliora primo ingresso nelle pagine)
+  useEffect(() => {
+    qc.prefetchQuery({ queryKey: ["dashboardSummary"], queryFn: () => apiGet("/api/dashboard/summary") })
+    qc.prefetchQuery({ queryKey: ["clients"], queryFn: () => apiGet("/api/clients") })
+    qc.prefetchQuery({ queryKey: ["projects"], queryFn: () => apiGet("/api/projects") })
+    qc.prefetchQuery({ queryKey: ["reports", "clients"], queryFn: () => apiGet("/api/reports/clients") })
+    qc.prefetchQuery({ queryKey: ["reports", "projects"], queryFn: () => apiGet("/api/reports/projects") })
+
+    // ✅ Prefetch rotte (secondario, ma gratis)
+    router.prefetch("/dashboard/clienti")
+    router.prefetch("/dashboard/progetti")
+    router.prefetch("/dashboard/report")
+  }, [qc, router])
 
   const handleLogout = () => {
-    // =================================================================
-    // PLACEHOLDER: Implementare logout reale
-    // =================================================================
-    // Per Supabase: await supabase.auth.signOut()
-    // =================================================================
     document.cookie = "session=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT"
     window.location.href = "/login"
   }
@@ -29,7 +43,6 @@ export function DashboardSidebar() {
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-64 bg-sidebar border-r border-sidebar-border hidden lg:block">
       <div className="flex flex-col h-full">
-        {/* Logo */}
         <div className="p-6 border-b border-sidebar-border">
           <Link href="/dashboard" className="text-xl font-bold text-sidebar-foreground">
             2it<span className="text-sidebar-primary">.</span>
@@ -37,7 +50,6 @@ export function DashboardSidebar() {
           <p className="text-xs text-sidebar-foreground/60 mt-1">Gestionale</p>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1">
           {navItems.map((item) => {
             const isActive = pathname === item.href
@@ -59,7 +71,6 @@ export function DashboardSidebar() {
           })}
         </nav>
 
-        {/* Logout */}
         <div className="p-4 border-t border-sidebar-border">
           <button
             onClick={handleLogout}

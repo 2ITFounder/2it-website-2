@@ -26,13 +26,10 @@ type Project = {
   due_date: string | null
 }
 
-type ReportClientResponse = {
-  data: {
-    client: Client
-    kpi: any
-    projects: Project[]
-  }
-  error?: string
+type ReportClientData = {
+  client: Client
+  kpi: any
+  projects: Project[]
 }
 
 const extractErrorMessage = (err: any) => {
@@ -49,12 +46,12 @@ export default function ReportClientDetailPage() {
   const { data, isLoading: loading, error } = useQuery({
     queryKey: ["reportClient", clientId],
     enabled: Boolean(clientId),
-    queryFn: ({ signal }) => apiGet<ReportClientResponse>(`/api/reports/clients/${clientId}`, signal),
+    queryFn: ({ signal }) => apiGet<ReportClientData>(`/api/reports/clients/${clientId}`, signal),
   })
 
-  const client = data?.data?.client ?? null
-  const kpi = data?.data?.kpi ?? null
-  const projects = Array.isArray(data?.data?.projects) ? data!.data.projects : []
+  const client = data?.client ?? null
+  const kpi = data?.kpi ?? null
+  const projects = Array.isArray(data?.projects) ? data!.projects : []
   const errorMsg = extractErrorMessage(error)
 
   if (loading) return <div className="text-muted-foreground">Caricamento…</div>

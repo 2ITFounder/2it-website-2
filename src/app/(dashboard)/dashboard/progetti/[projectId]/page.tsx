@@ -10,13 +10,7 @@ import { Button } from "@/src/components/ui/button"
 import { Input } from "@/src/components/ui/input"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { Label } from "@/src/components/ui/label"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/src/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/src/components/ui/dialog"
 import {
   AlertDialog,
   AlertDialogContent,
@@ -52,20 +46,17 @@ type Task = {
   position: number
 }
 
-type ProjectResp = { data: Project; error?: string }
-type TasksResp = { data: Task[]; error?: string }
-
 function clamp(n: number) {
   return Math.max(0, Math.min(100, n))
 }
 
-function taskStatusPill(status: "TODO" | "DOING" | "DONE") {
+function taskStatusPill(status: TaskStatus) {
   if (status === "DONE") return "bg-green-100 text-green-700"
   if (status === "DOING") return "bg-blue-100 text-blue-700"
   return "bg-gray-100 text-gray-700"
 }
 
-function taskBorder(status: "TODO" | "DOING" | "DONE") {
+function taskBorder(status: TaskStatus) {
   if (status === "DONE") return "border-green-200"
   if (status === "DOING") return "border-blue-200"
   return "border-gray-200"
@@ -86,39 +77,26 @@ export default function ProjectDetailPage() {
 
   const [error, setError] = useState<string | null>(null)
 
-  // create task dialog
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState("")
   const [newWeight, setNewWeight] = useState(1)
 
-  // delete confirm
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  const {
-    data: projectRes,
-    isLoading: projectLoading,
-    error: projectError,
-  } = useQuery({
+  const { data: project, isLoading: projectLoading, error: projectError } = useQuery({
     queryKey: ["project", projectId],
     enabled: Boolean(projectId),
-    queryFn: ({ signal }) => apiGet<ProjectResp>(`/api/projects/${projectId}`, signal),
+    queryFn: ({ signal }) => apiGet<Project>(`/api/projects/${projectId}`, signal),
   })
 
-  const {
-    data: tasksRes,
-    isLoading: tasksLoading,
-    error: tasksError,
-  } = useQuery({
+  const { data: tasks = [], isLoading: tasksLoading, error: tasksError } = useQuery({
     queryKey: ["tasks", projectId],
     enabled: Boolean(projectId),
-    queryFn: ({ signal }) => apiGet<TasksResp>(`/api/tasks?project_id=${encodeURIComponent(projectId)}`, signal),
+    queryFn: ({ signal }) => apiGet<Task[]>(`/api/tasks?project_id=${encodeURIComponent(projectId)}`, signal),
   })
-
-  const project = projectRes?.data ?? null
-  const tasks = Array.isArray(tasksRes?.data) ? tasksRes!.data : []
 
   const loading = projectLoading || tasksLoading
   const queryError = extractErrorMessage(projectError) || extractErrorMessage(tasksError)
@@ -162,10 +140,9 @@ export default function ProjectDetailPage() {
   type TaskPatch = Partial<Pick<Task, "title" | "status" | "weight" | "due_date" | "priority">>
 
   const patchTask = async (id: string, payload: TaskPatch) => {
-    // 1) optimistic update (React Query cache)
-    qc.setQueryData<TasksResp>(["tasks", projectId], (prev) => {
-      if (!prev?.data) return prev
-      return { ...prev, data: prev.data.map((t) => (t.id === id ? { ...t, ...payload } : t)) }
+    qc.setQueryData<Task[]>(["tasks", projectId], (prev) => {
+      if (!prev) return prev
+      return prev.map((t) => (t.id === id ? { ...t, ...payload } : t))
     })
 
     try {
@@ -183,19 +160,17 @@ export default function ProjectDetailPage() {
   }
 
   const moveTask = async (id: string, dir: "UP" | "DOWN") => {
-    // snapshot per rollback
-    const snapshot = qc.getQueryData<TasksResp>(["tasks", projectId])
+    const snapshot = qc.getQueryData<Task[]>(["tasks", projectId])
 
-    // 1) swap UI (optimistic)
-    qc.setQueryData<TasksResp>(["tasks", projectId], (prev) => {
-      if (!prev?.data) return prev
-      const i = prev.data.findIndex((t) => t.id === id)
+    qc.setQueryData<Task[]>(["tasks", projectId], (prev) => {
+      if (!prev) return prev
+      const i = prev.findIndex((t) => t.id === id)
       if (i === -1) return prev
       const j = dir === "UP" ? i - 1 : i + 1
-      if (j < 0 || j >= prev.data.length) return prev
-      const next = [...prev.data]
+      if (j < 0 || j >= prev.length) return prev
+      const next = [...prev]
       ;[next[i], next[j]] = [next[j], next[i]]
-      return { ...prev, data: next }
+      return next
     })
 
     try {
@@ -207,7 +182,6 @@ export default function ProjectDetailPage() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? "Errore move task")
 
-      // riallineo silenzioso
       await qc.invalidateQueries({ queryKey: ["tasks", projectId] })
     } catch (e: any) {
       setError(e?.message || "Errore di rete")
@@ -266,7 +240,6 @@ export default function ProjectDetailPage() {
 
       {topError && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{topError}</div>}
 
-      {/* Progress bar */}
       <GlassCard>
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
@@ -279,7 +252,6 @@ export default function ProjectDetailPage() {
         </div>
       </GlassCard>
 
-      {/* Tasks */}
       <GlassCard>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold">Task</h2>
@@ -298,10 +270,9 @@ export default function ProjectDetailPage() {
                       value={t.title}
                       onChange={(e) => {
                         const v = e.target.value
-                        qc.setQueryData<TasksResp>(["tasks", projectId], (prev) => {
-                          if (!prev?.data) return prev
-                          return { ...prev, data: prev.data.map((x) => (x.id === t.id ? { ...x, title: v } : x)) }
-                        })
+                        qc.setQueryData<Task[]>(["tasks", projectId], (prev) =>
+                          (prev ?? []).map((x) => (x.id === t.id ? { ...x, title: v } : x))
+                        )
                       }}
                       onBlur={() => patchTask(t.id, { title: t.title })}
                       className="font-medium"
@@ -311,9 +282,7 @@ export default function ProjectDetailPage() {
                       <div className="space-y-1 sm:col-span-3">
                         <Label>Status</Label>
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs px-2 py-1 rounded-full ${taskStatusPill(t.status)}`}>
-                            {t.status}
-                          </span>
+                          <span className={`text-xs px-2 py-1 rounded-full ${taskStatusPill(t.status)}`}>{t.status}</span>
                         </div>
 
                         <select
@@ -336,10 +305,9 @@ export default function ProjectDetailPage() {
                           value={t.weight}
                           onChange={(e) => {
                             const v = Number(e.target.value || 1)
-                            qc.setQueryData<TasksResp>(["tasks", projectId], (prev) => {
-                              if (!prev?.data) return prev
-                              return { ...prev, data: prev.data.map((x) => (x.id === t.id ? { ...x, weight: v } : x)) }
-                            })
+                            qc.setQueryData<Task[]>(["tasks", projectId], (prev) =>
+                              (prev ?? []).map((x) => (x.id === t.id ? { ...x, weight: v } : x))
+                            )
                           }}
                           onBlur={() => patchTask(t.id, { weight: t.weight })}
                         />
@@ -347,32 +315,16 @@ export default function ProjectDetailPage() {
 
                       <div className="space-y-1 sm:col-span-2">
                         <Label>Scadenza</Label>
-                        <Input
-                          type="date"
-                          value={t.due_date ?? ""}
-                          onChange={(e) => patchTask(t.id, { due_date: e.target.value || null })}
-                        />
+                        <Input type="date" value={t.due_date ?? ""} onChange={(e) => patchTask(t.id, { due_date: e.target.value || null })} />
                       </div>
                     </div>
                   </div>
 
                   <div className="flex flex-col gap-2">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => moveTask(t.id, "UP")}
-                      disabled={idx === 0}
-                      title="Sposta su"
-                    >
+                    <Button variant="outline" size="icon" onClick={() => moveTask(t.id, "UP")} disabled={idx === 0} title="Sposta su">
                       <ChevronUp className="w-4 h-4" />
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => moveTask(t.id, "DOWN")}
-                      disabled={idx === tasks.length - 1}
-                      title="Sposta giù"
-                    >
+                    <Button variant="outline" size="icon" onClick={() => moveTask(t.id, "DOWN")} disabled={idx === tasks.length - 1} title="Sposta giù">
                       <ChevronDown className="w-4 h-4" />
                     </Button>
                     <Button variant="destructive" size="icon" onClick={() => askDelete(t)} title="Elimina">
@@ -386,7 +338,6 @@ export default function ProjectDetailPage() {
         )}
       </GlassCard>
 
-      {/* Create Task Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -401,13 +352,7 @@ export default function ProjectDetailPage() {
 
             <div className="space-y-2">
               <Label>Peso</Label>
-              <Input
-                type="number"
-                min={1}
-                max={100}
-                value={newWeight}
-                onChange={(e) => setNewWeight(Number(e.target.value || 1))}
-              />
+              <Input type="number" min={1} max={100} value={newWeight} onChange={(e) => setNewWeight(Number(e.target.value || 1))} />
             </div>
           </div>
 
@@ -422,14 +367,11 @@ export default function ProjectDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirm */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Eliminare task?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget ? `Stai per eliminare "${deleteTarget.title}".` : "Questa azione è definitiva."}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{deleteTarget ? `Stai per eliminare "${deleteTarget.title}".` : "Questa azione è definitiva."}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Annulla</AlertDialogCancel>
