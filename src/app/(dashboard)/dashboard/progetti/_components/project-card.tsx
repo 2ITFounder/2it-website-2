@@ -18,7 +18,7 @@ export function ProjectCard({
   clientName,
   onEdit,
   onDelete,
-  onOpenDetail,
+  onOpenDetail, 
 }: {
   project: ProjectRow
   clientName: string
@@ -41,7 +41,14 @@ export function ProjectCard({
       >
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h3 className="font-semibold">{project.title}</h3>
+            <h3
+              className="font-semibold break-words max-w-[220px] sm:max-w-[320px] md:max-w-[380px] lg:max-w-[420px] xl:max-w-[500px] whitespace-pre-line overflow-x-auto scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+              tabIndex={0}
+              title={project.title}
+            >
+              {project.title}
+            </h3>
             <p className="text-sm text-muted-foreground">{clientName}</p>
           </div>
 
