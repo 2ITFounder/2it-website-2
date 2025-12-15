@@ -8,6 +8,7 @@ import { apiGet } from "@/src/lib/api"
 
 import { Button } from "@/src/components/ui/button"
 import { Input } from "@/src/components/ui/input"
+import { Textarea } from "@/src/components/ui/textarea"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { Label } from "@/src/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/src/components/ui/dialog"
@@ -270,7 +271,8 @@ export default function ProjectDetailPage() {
               <div key={t.id} className={`rounded-lg border p-3 ${taskBorder(t.status)}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
-                    <Input
+                    <Textarea
+                      rows={2}
                       value={t.title}
                       onChange={(e) => {
                         const v = e.target.value
@@ -278,8 +280,8 @@ export default function ProjectDetailPage() {
                           (prev ?? []).map((x) => (x.id === t.id ? { ...x, title: v } : x))
                         )
                       }}
-                      onBlur={() => patchTask(t.id, { title: t.title })}
-                      className="font-medium"
+                      onBlur={(e) => patchTask(t.id, { title: e.target.value })}
+                      className="font-medium leading-snug break-words whitespace-pre-wrap resize-none min-h-[52px]"
                     />
 
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-6 gap-3">
