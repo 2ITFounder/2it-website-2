@@ -112,7 +112,13 @@ export function DashboardTopbar() {
                 ) : null}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80 p-0 shadow-lg">
+            <DropdownMenuContent
+              side="bottom"
+              align="end"
+              sideOffset={8}
+              collisionPadding={12}
+              className="w-80 max-w-[calc(100vw-24px)] p-0 shadow-lg"
+            >
               <div className="flex items-center justify-between px-3 py-2 border-b">
                 <div>
                   <p className="text-sm font-medium">Notifiche</p>

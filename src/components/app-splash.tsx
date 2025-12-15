@@ -56,13 +56,13 @@ export function AppSplash() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.08),rgba(0,0,0,0.35))]" />
       </div>
 
-      {/* logo */}
+      {/* logo (usa la stessa immagine della splash per evitare altre icone) */}
       <div className="absolute inset-0 flex items-center justify-center">
         <img
-          src="/icon.svg"
+          src={SPLASH_IMAGE}
           alt=""
           className={[
-            "w-24 h-24 object-contain drop-shadow-lg will-change-transform",
+            "w-28 h-28 object-cover rounded-xl shadow-lg will-change-transform",
             exiting ? "opacity-0 scale-95 transition-all duration-500 ease-out" : "opacity-100 scale-100",
           ].join(" ")}
         />
