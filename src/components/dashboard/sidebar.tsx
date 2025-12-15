@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { LayoutDashboard, Users, FileBarChart, Settings, LogOut, FolderKanban } from "lucide-react"
+import { LayoutDashboard, Users, FileBarChart, Settings, LogOut, FolderKanban, Mail } from "lucide-react"
 import { cn } from "@/src/lib/utils"
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
@@ -10,6 +10,7 @@ import { apiGet } from "@/src/lib/api"
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/contatti", label: "Contatti", icon: Mail },
   { href: "/dashboard/clienti", label: "Clienti", icon: Users },
   { href: "/dashboard/progetti", label: "Progetti", icon: FolderKanban },
   { href: "/dashboard/report", label: "Report", icon: FileBarChart },
@@ -24,6 +25,7 @@ export function DashboardSidebar() {
   // ✅ Prefetch 1 volta quando entri in dashboard (migliora primo ingresso nelle pagine)
   useEffect(() => {
     qc.prefetchQuery({ queryKey: ["dashboardSummary"], queryFn: () => apiGet("/api/dashboard/summary") })
+    qc.prefetchQuery({ queryKey: ["contacts"], queryFn: () => apiGet("/api/contacts") })
     qc.prefetchQuery({ queryKey: ["clients"], queryFn: () => apiGet("/api/clients") })
     qc.prefetchQuery({ queryKey: ["projects"], queryFn: () => apiGet("/api/projects") })
     qc.prefetchQuery({ queryKey: ["reports", "clients"], queryFn: () => apiGet("/api/reports/clients") })
@@ -32,6 +34,7 @@ export function DashboardSidebar() {
 
     // ✅ Prefetch rotte (secondario, ma gratis)
     router.prefetch("/dashboard/clienti")
+    router.prefetch("/dashboard/contatti")
     router.prefetch("/dashboard/progetti")
     router.prefetch("/dashboard/report")
     router.prefetch("/dashboard/impostazioni")

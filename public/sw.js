@@ -1,4 +1,4 @@
-const CACHE = "2it-app-v2" // <-- bump versione per forzare refresh
+const CACHE = "2it-app-v3" // <-- bump versione per forzare refresh
 const APP_SHELL = "/dashboard"
 
 self.addEventListener("install", (event) => {
@@ -92,4 +92,3 @@ self.addEventListener("notificationclick", (event) => {
     })()
   )
 })
-

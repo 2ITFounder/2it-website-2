@@ -116,7 +116,7 @@ export default function ReportPage() {
                 {clients.map((c) => (
                   <button
                     key={c.id}
-                    className="p-3 rounded-lg bg-muted/50 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                    className="w-full text-left p-3 rounded-lg bg-muted/50 hover:bg-muted transition flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                     onClick={() => router.push(`/dashboard/clienti/${c.id}/report`)}
                   >
                     <div className="min-w-0 flex-1">
@@ -126,7 +126,7 @@ export default function ReportPage() {
                       </div>
                     </div>
 
-                    <div className="w-full sm:w-32 sm:flex-shrink-0">
+                    <div className="w-full sm:w-28 sm:flex-shrink-0 text-right">
                       <div className="h-2 bg-muted rounded-full overflow-hidden">
                         <div className="h-full bg-accent rounded-full" style={{ width: `${c.progressAvg}%` }} />
                       </div>
