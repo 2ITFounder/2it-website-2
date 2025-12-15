@@ -138,14 +138,17 @@ export default function ClientiPage() {
         if (res.status === 409) {
           errorMsg = (
             <>
-              {json?.error ?? "Impossibile eliminare il cliente: elimina prima i progetti associati."}{" "}
-              <Link
-                href={`/dashboard/progetti?clientId=${encodeURIComponent(id)}`}
-                className="inline-block px-3 py-1 rounded-md border border-blue-500 text-blue-600 font-medium hover:bg-blue-100 transition-colors ml-2"
-                style={{ textDecoration: 'none' }}
+              {json?.error ?? "Impossibile eliminare il cliente: elimina prima i progetti associati gg."}{" "}
+              <Button
+                asChild
+                variant="secondary"
+                size="sm"
+                className="ml-2 whitespace-nowrap shadow-sm"
               >
-                Vai ai progetti associati
-              </Link>
+                <Link href={`/dashboard/progetti?clientId=${encodeURIComponent(id)}`}> 
+                  Vai ai progetti associati
+                </Link>
+              </Button>
             </>
           )
         }

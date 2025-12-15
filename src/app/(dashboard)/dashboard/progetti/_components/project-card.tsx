@@ -37,13 +37,12 @@ export function ProjectCard({
         onClick={() => onOpenDetail(project)}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => e.key === "Enter" && onOpenDetail(project)}
+        onKeyDown={(e) => e.key === "Enter" && onOpenDetail(project)} 
       >
         <div className="flex items-start justify-between mb-4">
-          <div>
+          <div className="min-w-0">
             <h3
-              className="font-semibold break-words max-w-[220px] sm:max-w-[320px] md:max-w-[380px] lg:max-w-[420px] xl:max-w-[500px] whitespace-pre-line overflow-x-auto scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent"
-              style={{ WebkitOverflowScrolling: 'touch' }}
+              className="font-semibold leading-tight break-words whitespace-pre-line text-foreground"
               tabIndex={0}
               title={project.title}
             >
