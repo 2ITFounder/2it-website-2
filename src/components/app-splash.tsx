@@ -5,22 +5,21 @@ import { useEffect, useLayoutEffect, useState } from "react"
 const SPLASH_IMAGE = "/splash/splash.png"
 
 export function AppSplash() {
+  const isStandalone = () => {
+    if (typeof window === "undefined") return false
+    const mediaStandalone = window.matchMedia?.("(display-mode: standalone)").matches
+    const iosStandalone = (window.navigator as never as { standalone?: boolean })?.standalone === true
+    const trustedOrigin = document.referrer?.startsWith("android-app://")
+    return Boolean(mediaStandalone || iosStandalone || trustedOrigin)
+  }
+
   const [phase, setPhase] = useState<"show" | "exit" | "gone">("show")
-  const [isPwa, setIsPwa] = useState(false)
-  const [ready, setReady] = useState(false)
+  const [isPwa, setIsPwa] = useState<boolean>(isStandalone)
 
   // Rende la splash solo in PWA/standalone
   useLayoutEffect(() => {
-    const isStandalone = () => {
-      const mediaStandalone = window.matchMedia?.("(display-mode: standalone)").matches
-      const iosStandalone = (window.navigator as never as { standalone?: boolean })?.standalone === true
-      const trustedOrigin = document.referrer?.startsWith("android-app://")
-      return Boolean(mediaStandalone || iosStandalone || trustedOrigin)
-    }
-
     const update = () => setIsPwa(isStandalone())
     update()
-    setReady(true)
 
     const media = window.matchMedia?.("(display-mode: standalone)")
     media?.addEventListener("change", update)
@@ -40,7 +39,7 @@ export function AppSplash() {
     }
   }, [isPwa])
 
-  if (!ready || !isPwa || phase === "gone") return null
+  if (!isPwa || phase === "gone") return null
   const exiting = phase === "exit"
 
   return (
@@ -50,6 +49,7 @@ export function AppSplash() {
         <img
           src={SPLASH_IMAGE}
           alt=""
+          loading="eager"
           className={[
             "absolute inset-0 w-full h-full object-cover",
             exiting ? "scale-[1.03] opacity-90 transition-all duration-700 ease-out" : "scale-100 opacity-100",
