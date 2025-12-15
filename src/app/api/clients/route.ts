@@ -133,3 +133,41 @@ export async function PATCH(req: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ data }, { status: 200 })
 }
+export async function DELETE(req: Request) {
+  const supabase = await createSupabaseRouteClient()
+  const { data: auth } = await supabase.auth.getUser()
+  if (!auth.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+  const url = new URL(req.url)
+  const id = url.searchParams.get("id")?.trim()
+  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
+
+  // 1) verifica se ci sono progetti associati
+  const { data: anyProject, error: projErr } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("client_id", id)
+    .eq("user_id", auth.user.id)
+    .limit(1)
+    .maybeSingle()
+
+  if (projErr) return NextResponse.json({ error: projErr.message }, { status: 400 })
+
+  if (anyProject) {
+    return NextResponse.json(
+      { error: "Impossibile eliminare il cliente: elimina prima i progetti associati." },
+      { status: 409 } // Conflict
+    )
+  }
+
+  // 2) elimina cliente (solo se appartiene all’utente)
+  const { error } = await supabase
+    .from("clients")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", auth.user.id)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  return NextResponse.json({ ok: true })
+}
+

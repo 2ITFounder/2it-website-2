@@ -4,9 +4,10 @@ import { Search, Plus, MoreHorizontal } from "lucide-react"
 import { Button } from "@/src/components/ui/button"
 import { Input } from "@/src/components/ui/input"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
-import { useMemo, useState } from "react"
+import { useMemo, useState, ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useClients } from "@/src/hooks/useClients"
+import Link from "next/link"
 
 // ⬇️ shadcn dialog + label
 import {
@@ -70,7 +71,7 @@ export default function ClientiPage() {
 
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("")
-  const [pageError, setPageError] = useState<string | null>(null)
+  const [pageError, setPageError] = useState<ReactNode | null>(null)
 
   // Query (cache condivisa)
   const { data, isLoading, error } = useClients()
@@ -121,25 +122,38 @@ export default function ClientiPage() {
     setDeleteOpen(true)
   }
 
-  const confirmDelete = async () => {
-    if (!deleteTarget) return
+  const confirmDeleteById = async (id: string) => {
     setDeleting(true)
     setPageError(null)
 
     try {
-      const res = await fetch(`/api/clients?id=${encodeURIComponent(deleteTarget.id)}`, {
+      const res = await fetch(`/api/clients?id=${encodeURIComponent(id)}`, {
         method: "DELETE",
         credentials: "include",
       })
       const json = await res.json().catch(() => ({}))
+
       if (!res.ok) {
-        setPageError(extractErrorMessage(json?.error) || "Errore nell'eliminazione cliente")
+        let errorMsg: ReactNode = extractErrorMessage(json?.error) || "Errore nell'eliminazione cliente"
+        if (res.status === 409) {
+          errorMsg = (
+            <>
+              {json?.error ?? "Impossibile eliminare il cliente: elimina prima i progetti associati."}{" "}
+              <Link
+                href={`/dashboard/progetti?clientId=${encodeURIComponent(id)}`}
+                className="inline-block px-3 py-1 rounded-md border border-blue-500 text-blue-600 font-medium hover:bg-blue-100 transition-colors ml-2"
+                style={{ textDecoration: 'none' }}
+              >
+                Vai ai progetti associati
+              </Link>
+            </>
+          )
+        }
+        setPageError(errorMsg)
         return
       }
 
-      setDeleteOpen(false)
-      setDeleteTarget(null)
-      await qc.invalidateQueries({ queryKey: ["clients"] })
+      await qc.invalidateQueries({ queryKey: ["clients"] }) 
     } catch {
       setPageError("Errore di rete. Riprova.")
     } finally {
@@ -437,7 +451,12 @@ export default function ClientiPage() {
         <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{topError}</div>
       )}
 
-      <AlertDialog open={deleteOpen} onOpenChange={(v: boolean) => setDeleteOpen(v)}>
+      <AlertDialog open={deleteOpen} onOpenChange={(v: boolean) => {
+        setDeleteOpen(v)
+        if (!v) {
+          setDeleteTarget(null)
+        }
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Eliminare cliente?</AlertDialogTitle>
@@ -451,9 +470,11 @@ export default function ClientiPage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Annulla</AlertDialogCancel>
             <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault()
-                confirmDelete()
+              onClick={() => {
+                setDeleteOpen(false)
+                const id = deleteTarget?.id
+                setDeleteTarget(null)
+                if (id) void confirmDeleteById(id)
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={deleting}

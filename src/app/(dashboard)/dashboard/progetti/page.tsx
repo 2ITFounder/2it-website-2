@@ -17,8 +17,18 @@ export default function ProgettiDashboardPage() {
   const router = useRouter()
   const qc = useQueryClient()
 
+  // Leggi clientId dalla query string
   const [query, setQuery] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [clientIdFilter, setClientIdFilter] = useState<string | null>(null)
+  // Leggi clientId dalla query string solo al mount
+  useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search)
+      const clientId = params.get("clientId")
+      if (clientId) setClientIdFilter(clientId)
+    }
+  })
 
   // dialogs
   const [createOpen, setCreateOpen] = useState(false)
@@ -58,9 +68,13 @@ export default function ProgettiDashboardPage() {
   }, [clients])
 
   const filtered = useMemo(() => {
+    let filteredProjects = projects
+    if (clientIdFilter) {
+      filteredProjects = filteredProjects.filter((p) => p.client_id === clientIdFilter)
+    }
     const s = query.trim().toLowerCase()
-    if (!s) return projects
-    return projects.filter((p) => {
+    if (!s) return filteredProjects
+    return filteredProjects.filter((p) => {
       const clientName = clientNameById(p.client_id).toLowerCase()
       const status = (STATUS_LABEL[p.status] ?? p.status).toLowerCase()
       return (
@@ -70,7 +84,7 @@ export default function ProgettiDashboardPage() {
         status.includes(s)
       )
     })
-  }, [projects, query, clientNameById])
+  }, [projects, query, clientNameById, clientIdFilter])
 
   // actions
   const handleCreate = async (payload: {
