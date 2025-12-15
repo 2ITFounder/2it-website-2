@@ -1,15 +1,16 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useLayoutEffect, useState } from "react"
 
 const SPLASH_IMAGE = "/splash/splash.png"
 
 export function AppSplash() {
   const [phase, setPhase] = useState<"show" | "exit" | "gone">("show")
   const [isPwa, setIsPwa] = useState(false)
+  const [ready, setReady] = useState(false)
 
   // Rende la splash solo in PWA/standalone
-  useEffect(() => {
+  useLayoutEffect(() => {
     const isStandalone = () => {
       const mediaStandalone = window.matchMedia?.("(display-mode: standalone)").matches
       const iosStandalone = (window.navigator as never as { standalone?: boolean })?.standalone === true
@@ -19,6 +20,7 @@ export function AppSplash() {
 
     const update = () => setIsPwa(isStandalone())
     update()
+    setReady(true)
 
     const media = window.matchMedia?.("(display-mode: standalone)")
     media?.addEventListener("change", update)
@@ -38,7 +40,7 @@ export function AppSplash() {
     }
   }, [isPwa])
 
-  if (!isPwa || phase === "gone") return null
+  if (!ready || !isPwa || phase === "gone") return null
   const exiting = phase === "exit"
 
   return (

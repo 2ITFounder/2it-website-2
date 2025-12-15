@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createSupabaseRouteClient } from "../../../lib/supabase/route"
+import { createSupabaseServiceClient } from "@/src/lib/supabase/service"
 import { notifyAdmins } from "@/src/lib/push/server"
 
 const ContactSchema = z.object({
@@ -21,10 +22,11 @@ const ContactUpdateSchema = z.object({
 })
 
 export async function GET(req: Request) {
-  const supabase = await createSupabaseRouteClient()
-  const { data: auth } = await supabase.auth.getUser()
+  const supabaseAuth = await createSupabaseRouteClient()
+  const { data: auth } = await supabaseAuth.auth.getUser()
   if (!auth?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
+  const supabase = createSupabaseServiceClient()
   const url = new URL(req.url)
   const qRaw = url.searchParams.get("q")?.trim()
 
@@ -86,10 +88,11 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const supabase = await createSupabaseRouteClient()
-  const { data: auth } = await supabase.auth.getUser()
+  const supabaseAuth = await createSupabaseRouteClient()
+  const { data: auth } = await supabaseAuth.auth.getUser()
   if (!auth?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
+  const supabase = createSupabaseServiceClient()
   const body = await req.json().catch(() => null)
   const parsed = ContactUpdateSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
@@ -115,10 +118,11 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const supabase = await createSupabaseRouteClient()
-  const { data: auth } = await supabase.auth.getUser()
+  const supabaseAuth = await createSupabaseRouteClient()
+  const { data: auth } = await supabaseAuth.auth.getUser()
   if (!auth?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
+  const supabase = createSupabaseServiceClient()
   const url = new URL(req.url)
   const id = url.searchParams.get("id")
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
