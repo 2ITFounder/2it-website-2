@@ -75,7 +75,7 @@ export async function POST(req: Request) {
   try {
     await notifyAdmins({
       title: "Nuovo contatto dal sito",
-      body: `${name} ha inviato una richiesta`,
+      body: `${name} ha inviato una richiesta dal form contatti.`,
       url: "/dashboard/contatti",
     })
   } catch (e) {

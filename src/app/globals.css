@@ -392,21 +392,29 @@ html {
   transform: translate3d(0, 0, 0);
 }
 
-/* Splash diagonale: due poligoni che coprono lo schermo e poi “scappano” */
+/* Splash diagonale: immagine full-screen che si apre dal centro */
+.splash-tri-base {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: saturate(1.05);
+  box-shadow: inset 0 0 120px rgba(0, 0, 0, 0.25);
+}
+
 .splash-tri-1 {
-  /* triangolo che copre metà schermo “sopra” la diagonale */
+  /* triangolo che copre meta' schermo sopra la diagonale */
   clip-path: polygon(50% 50%, 100% 0%, 0% 0%);
   opacity: 1;
   transform: translate3d(0, 0, 0);
-  transition: transform 700ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 650ms ease-out;
+  transition: transform 820ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 700ms ease-out;
 }
 
 .splash-tri-2 {
-  /* triangolo che copre metà schermo “sotto” la diagonale */
+  /* triangolo che copre meta' schermo sotto la diagonale */
   clip-path: polygon(50% 50%, 0% 100%, 100% 100%);
   opacity: 1;
   transform: translate3d(0, 0, 0);
-  transition: transform 700ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 650ms ease-out;
+  transition: transform 820ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 700ms ease-out;
 }
 
 .splash-tri-1-exit {

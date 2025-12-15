@@ -24,13 +24,27 @@ export function DashboardSidebar() {
 
   // ✅ Prefetch 1 volta quando entri in dashboard (migliora primo ingresso nelle pagine)
   useEffect(() => {
-    qc.prefetchQuery({ queryKey: ["dashboardSummary"], queryFn: () => apiGet("/api/dashboard/summary") })
-    qc.prefetchQuery({ queryKey: ["contacts"], queryFn: () => apiGet("/api/contacts") })
-    qc.prefetchQuery({ queryKey: ["clients"], queryFn: () => apiGet("/api/clients") })
-    qc.prefetchQuery({ queryKey: ["projects"], queryFn: () => apiGet("/api/projects") })
-    qc.prefetchQuery({ queryKey: ["reports", "clients"], queryFn: () => apiGet("/api/reports/clients") })
-    qc.prefetchQuery({ queryKey: ["reports", "projects"], queryFn: () => apiGet("/api/reports/projects") })
-    qc.prefetchQuery({ queryKey: ["settings"], queryFn: () => apiGet("/api/settings") })
+    const prefetch = async () => {
+      try {
+        // Notifiche prima di tutto: servono appena apri l'app
+        await qc.prefetchQuery({
+          queryKey: ["notifications"],
+          queryFn: () => apiGet("/api/notifications?limit=20"),
+        })
+      } catch {
+        // Se fallisce il prefetch non blocca il resto
+      }
+
+      qc.prefetchQuery({ queryKey: ["dashboardSummary"], queryFn: () => apiGet("/api/dashboard/summary") })
+      qc.prefetchQuery({ queryKey: ["contacts"], queryFn: () => apiGet("/api/contacts") })
+      qc.prefetchQuery({ queryKey: ["clients"], queryFn: () => apiGet("/api/clients") })
+      qc.prefetchQuery({ queryKey: ["projects"], queryFn: () => apiGet("/api/projects") })
+      qc.prefetchQuery({ queryKey: ["reports", "clients"], queryFn: () => apiGet("/api/reports/clients") })
+      qc.prefetchQuery({ queryKey: ["reports", "projects"], queryFn: () => apiGet("/api/reports/projects") })
+      qc.prefetchQuery({ queryKey: ["settings"], queryFn: () => apiGet("/api/settings") })
+    }
+
+    void prefetch()
 
     // ✅ Prefetch rotte (secondario, ma gratis)
     router.prefetch("/dashboard/clienti")

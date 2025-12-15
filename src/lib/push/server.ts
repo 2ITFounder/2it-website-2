@@ -1,10 +1,12 @@
 import webpush from "web-push"
 import { createSupabaseServerClient } from "@/src/lib/supabase/server"
+import { createSupabaseServiceClient } from "@/src/lib/supabase/service"
 
 type PushPayload = {
   title: string
   body: string
   url?: string
+  type?: string
 }
 
 let isConfigured = false
@@ -52,6 +54,21 @@ export async function notifyAdmins(payload: PushPayload, opts?: { excludeUserId?
 
   if (subErr) throw subErr
   if (!subs?.length) return
+
+  // Insert a row in notifications for each admin (service role bypasses RLS)
+  try {
+    const svc = createSupabaseServiceClient()
+    const rows = adminIds.map((userId: string) => ({
+      user_id: userId,
+      title: payload.title,
+      body: payload.body,
+      link: payload.url ?? null,
+      type: payload.type ?? null,
+    }))
+    await svc.from("notifications").insert(rows)
+  } catch (e) {
+    console.warn("[push] insert notifications failed", e)
+  }
 
   const body = JSON.stringify(payload)
 
