@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { LayoutDashboard, Users, FileBarChart, Settings, LogOut, FolderKanban, Mail } from "lucide-react"
+import { LayoutDashboard, Users, FileBarChart, Settings, LogOut, FolderKanban, Mail, MessageSquare } from "lucide-react"
 import { cn } from "@/src/lib/utils"
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
@@ -13,6 +13,7 @@ const navItems = [
   { href: "/dashboard/contatti", label: "Contatti", icon: Mail },
   { href: "/dashboard/clienti", label: "Clienti", icon: Users },
   { href: "/dashboard/progetti", label: "Progetti", icon: FolderKanban },
+  { href: "/dashboard/messaggi", label: "Messaggi", icon: MessageSquare },
   { href: "/dashboard/report", label: "Report", icon: FileBarChart },
   { href: "/dashboard/impostazioni", label: "Impostazioni", icon: Settings },
 ]
@@ -50,6 +51,7 @@ export function DashboardSidebar() {
     router.prefetch("/dashboard/clienti")
     router.prefetch("/dashboard/contatti")
     router.prefetch("/dashboard/progetti")
+    router.prefetch("/dashboard/messaggi")
     router.prefetch("/dashboard/report")
     router.prefetch("/dashboard/impostazioni")
   }, [qc, router])

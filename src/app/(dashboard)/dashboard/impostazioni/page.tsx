@@ -16,6 +16,7 @@ type SettingsDTO = {
   first_name: string | null
   last_name: string | null
   email: string | null
+  username: string | null
   notifications_email: boolean
   notifications_push: boolean
   notifications_weekly: boolean
@@ -25,6 +26,7 @@ const DEFAULT_SETTINGS: SettingsDTO = {
   first_name: null,
   last_name: null,
   email: null,
+  username: null,
   notifications_email: true,
   notifications_push: false,
   notifications_weekly: true,
@@ -81,6 +83,7 @@ export default function ImpostazioniPage() {
     first_name: "Admin",
     last_name: "2it",
     email: "admin@2it.it",
+    username: "admin",
   })
 
   const [notifications, setNotifications] = useState({
@@ -114,6 +117,7 @@ export default function ImpostazioniPage() {
       first_name: settings.first_name ?? "Admin",
       last_name: settings.last_name ?? "2it",
       email: settings.email ?? "admin@2it.it",
+      username: settings.username ?? "admin",
     })
 
     setNotifications({
@@ -148,6 +152,7 @@ export default function ImpostazioniPage() {
       first_name: profile.first_name || null,
       last_name: profile.last_name || null,
       email: profile.email || null,
+      username: profile.username?.trim() || null,
       notifications_email: notifications.email,
       notifications_push: notifications.push,
       notifications_weekly: notifications.weekly,
@@ -204,15 +209,8 @@ export default function ImpostazioniPage() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json?.error ?? "Errore subscribe push")
 
-      // 3) 🔴 SALVA ESPLICITAMENTE push = true
-      await saveMutation.mutateAsync({
-        first_name: profile.first_name || null,
-        last_name: profile.last_name || null,
-        email: profile.email || null,
-        notifications_email: notifications.email,
-        notifications_push: true,
-        notifications_weekly: notifications.weekly,
-      })
+      // SALVA ESPLICITAMENTE push = true
+      await saveMutation.mutateAsync(buildPayload({ notifications_push: true }))
     } else {
       // unsubscribe
       const reg = await ensureServiceWorkerReady()
@@ -229,15 +227,8 @@ export default function ImpostazioniPage() {
         }).catch(() => {})
       }
 
-      // 🔴 SALVA ESPLICITAMENTE push = false
-      await saveMutation.mutateAsync({
-        first_name: profile.first_name || null,
-        last_name: profile.last_name || null,
-        email: profile.email || null,
-        notifications_email: notifications.email,
-        notifications_push: false,
-        notifications_weekly: notifications.weekly,
-      })
+      // SALVA ESPLICITAMENTE push = false
+      await saveMutation.mutateAsync(buildPayload({ notifications_push: false }))
     }
 
     setOk("Notifiche push aggiornate ✅")
@@ -346,6 +337,18 @@ export default function ImpostazioniPage() {
                 onChange={(e) => setProfile((p) => ({ ...p, last_name: e.target.value }))}
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="username">Username</Label>
+            <Input
+              id="username"
+              value={profile.username ?? ""}
+              placeholder="es. mario.rossi"
+              onChange={(e) => setProfile((p) => ({ ...p, username: e.target.value }))}
+            />
+            <p className="text-xs text-muted-foreground">
+              Usato nelle chat interne. Lettere, numeri, punto, trattino o underscore.
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>

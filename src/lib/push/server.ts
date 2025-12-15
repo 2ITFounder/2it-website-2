@@ -91,3 +91,56 @@ export async function notifyAdmins(payload: PushPayload, opts?: { excludeUserId?
     })
   )
 }
+
+export async function notifyUsers(userIds: string[], payload: PushPayload, opts?: { excludeUserId?: string }) {
+  configureWebPushOnce()
+  if (isDisabled) return
+
+  const recipients = userIds.filter((id) => id && id !== opts?.excludeUserId)
+  if (recipients.length === 0) return
+
+  const supabase = await createSupabaseServerClient()
+
+  const { data: subs, error: subErr } = await supabase
+    .from("push_subscriptions")
+    .select("id, user_id, endpoint, p256dh, auth")
+    .in("user_id", recipients)
+
+  if (subErr) throw subErr
+  if (!subs?.length) return
+
+  try {
+    const svc = createSupabaseServiceClient()
+    const rows = recipients.map((userId) => ({
+      user_id: userId,
+      title: payload.title,
+      body: payload.body,
+      link: payload.url ?? null,
+      type: payload.type ?? null,
+    }))
+    await svc.from("notifications").insert(rows)
+  } catch (e) {
+    console.warn("[push] insert notifications failed", e)
+  }
+
+  const body = JSON.stringify(payload)
+
+  await Promise.allSettled(
+    subs.map(async (s: any) => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: s.endpoint,
+            keys: { p256dh: s.p256dh, auth: s.auth },
+          },
+          body
+        )
+      } catch (e: any) {
+        const status = e?.statusCode
+        if (status === 404 || status === 410) {
+          await supabase.from("push_subscriptions").delete().eq("id", s.id)
+        }
+      }
+    })
+  )
+}

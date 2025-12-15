@@ -82,6 +82,7 @@ export default function ProjectDetailPage() {
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState("")
   const [newWeight, setNewWeight] = useState<string>("1")
+  const [weightDrafts, setWeightDrafts] = useState<Record<string, string>>({})
 
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
@@ -308,14 +309,30 @@ export default function ProjectDetailPage() {
                           type="number"
                           min={1}
                           max={100}
-                          value={t.weight}
+                          value={weightDrafts[t.id] ?? String(t.weight ?? "")}
                           onChange={(e) => {
-                            const v = Number(e.target.value || 1)
-                            qc.setQueryData<Task[]>(["tasks", projectId], (prev) =>
-                              (prev ?? []).map((x) => (x.id === t.id ? { ...x, weight: v } : x))
-                            )
+                            const raw = e.target.value
+                            if (raw === "" || /^\d+$/.test(raw)) {
+                              setWeightDrafts((prev) => ({ ...prev, [t.id]: raw }))
+                            }
                           }}
-                          onBlur={() => patchTask(t.id, { weight: t.weight })}
+                          onBlur={() => {
+                            const draft = weightDrafts[t.id]
+                            const parsed = Math.min(100, Math.max(1, parseInt(draft ?? String(t.weight ?? "1"), 10) || 1))
+
+                            // Aggiorna subito la cache locale per riflettere il numero corretto
+                            qc.setQueryData<Task[]>(["tasks", projectId], (prev) =>
+                              (prev ?? []).map((x) => (x.id === t.id ? { ...x, weight: parsed } : x))
+                            )
+
+                            setWeightDrafts((prev) => {
+                              const next = { ...prev }
+                              delete next[t.id]
+                              return next
+                            })
+
+                            patchTask(t.id, { weight: parsed })
+                          }}
                         />
                       </div>
 

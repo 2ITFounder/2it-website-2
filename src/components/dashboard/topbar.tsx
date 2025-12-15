@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { Menu, X, Bell, User } from "lucide-react"
+import { Menu, X, Bell, User, MessageCircle } from "lucide-react"
 import { Button } from "@/src/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/src/components/ui/dropdown-menu"
 import { cn } from "@/src/lib/utils"
@@ -103,6 +103,11 @@ export function DashboardTopbar() {
 
         {/* Right Side */}
         <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" asChild>
+            <Link href="/dashboard/messaggi" aria-label="Messaggi">
+              <MessageCircle className="w-5 h-5" />
+            </Link>
+          </Button>
           <DropdownMenu open={notificationsOpen} onOpenChange={handleOpenNotifications}>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative" aria-label="Notifiche">

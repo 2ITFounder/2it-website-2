@@ -6,6 +6,13 @@ const SettingsSchema = z.object({
   first_name: z.string().optional().nullable(),
   last_name: z.string().optional().nullable(),
   email: z.string().email().optional().nullable(),
+  username: z
+    .string()
+    .min(3)
+    .max(30)
+    .regex(/^[a-zA-Z0-9._-]+$/, "Solo lettere, numeri, punto, trattino e underscore")
+    .optional()
+    .nullable(),
   notifications_email: z.boolean(),
   notifications_push: z.boolean(),
   notifications_weekly: z.boolean(),
