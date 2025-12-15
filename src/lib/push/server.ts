@@ -36,7 +36,7 @@ export async function notifyAdmins(payload: PushPayload, opts?: { excludeUserId?
   configureWebPushOnce()
   if (isDisabled) return
 
-  const supabase = await createSupabaseServerClient()
+  const supabase = createSupabaseServiceClient()
 
   const { data: admins, error: adminErr } = await supabase.from("admin_users").select("user_id")
   if (adminErr) throw adminErr
@@ -99,7 +99,7 @@ export async function notifyUsers(userIds: string[], payload: PushPayload, opts?
   const recipients = userIds.filter((id) => id && id !== opts?.excludeUserId)
   if (recipients.length === 0) return
 
-  const supabase = await createSupabaseServerClient()
+  const supabase = createSupabaseServiceClient()
 
   const { data: subs, error: subErr } = await supabase
     .from("push_subscriptions")
