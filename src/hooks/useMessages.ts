@@ -1,4 +1,4 @@
-import { useInfiniteQuery } from "@tanstack/react-query"
+import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query"
 import { apiGet } from "@/src/lib/api"
 
 export type MessageItem = {
@@ -19,12 +19,19 @@ export type MessagesResponse = {
 }
 
 export function useMessages(chatId?: string) {
-  return useInfiniteQuery<MessagesResponse>({
+  return useInfiniteQuery<
+    MessagesResponse,
+    Error,
+    InfiniteData<MessagesResponse>,
+    ["messages", string | undefined],
+    string | null
+  >({
     queryKey: ["messages", chatId],
     enabled: Boolean(chatId),
+    initialPageParam: null,
     queryFn: async ({ signal, pageParam }) => {
       const params = new URLSearchParams({ chat_id: chatId ?? "" })
-      if (pageParam) params.set("before", pageParam as string)
+      if (pageParam) params.set("before", pageParam)
       params.set("limit", "30")
       return apiGet<MessagesResponse>(`/api/messages?${params.toString()}`, signal)
     },

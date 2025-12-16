@@ -3,13 +3,12 @@
 import { useEffect, useMemo, useState, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { MessageSquare, Send } from "lucide-react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { Button } from "@/src/components/ui/button"
-import { Input } from "@/src/components/ui/input"
 import { Textarea } from "@/src/components/ui/textarea"
 import { useChats } from "@/src/hooks/useChats"
-import { MessageItem, useMessages } from "@/src/hooks/useMessages"
+import { MessageItem, useMessages, type MessagesResponse } from "@/src/hooks/useMessages"
 import { useChatUsers } from "@/src/hooks/useChatUsers"
 import { cn } from "@/src/lib/utils"
 import { createSupabaseBrowserClient } from "@/src/lib/supabase/client"
@@ -69,13 +68,15 @@ export default function MessagesPage() {
 
       await qc.cancelQueries({ queryKey: ["messages", chatIdForCache] })
 
-      qc.setQueryData<any>(["messages", chatIdForCache], (prev) => {
-        if (!prev) {
-          return { pages: [{ items: [optimisticMsg], members: [], nextCursor: null }], pageParams: [undefined] }
+      qc.setQueryData<InfiniteData<MessagesResponse> | undefined>(["messages", chatIdForCache], (prev: InfiniteData<MessagesResponse> | undefined) => {
+        const base: InfiniteData<MessagesResponse> = {
+          pages: [{ items: [optimisticMsg], members: [], nextCursor: null }],
+          pageParams: [undefined],
         }
+        if (!prev) return base
         const pages = [...prev.pages]
         const lastIndex = pages.length - 1
-        const updatedItems = [...pages[lastIndex].items, optimisticMsg].sort((a, b) =>
+        const updatedItems = [...pages[lastIndex].items, optimisticMsg].sort((a: MessageItem, b: MessageItem) =>
           a.created_at.localeCompare(b.created_at)
         )
         pages[lastIndex] = { ...pages[lastIndex], items: updatedItems }
@@ -88,9 +89,9 @@ export default function MessagesPage() {
     },
     onError: (_error, _variables, context) => {
       if (!context) return
-      qc.setQueryData<any>(["messages", context.chatIdForCache], (prev) => {
+      qc.setQueryData<InfiniteData<MessagesResponse> | undefined>(["messages", context.chatIdForCache], (prev: InfiniteData<MessagesResponse> | undefined) => {
         if (!prev) return prev
-        const pages = prev.pages.map((p: any) => ({
+        const pages = prev.pages.map((p) => ({
           ...p,
           items: p.items.map((m: MessageItem) =>
             m.id === context.tempId || m.tempId === context.tempId
@@ -107,9 +108,9 @@ export default function MessagesPage() {
       const targetKey = selectedChat ?? context?.chatIdForCache ?? undefined
 
       // reconcile optimistic message
-      qc.setQueryData<any>(["messages", targetKey], (prev) => {
+      qc.setQueryData<InfiniteData<MessagesResponse> | undefined>(["messages", targetKey], (prev: InfiniteData<MessagesResponse> | undefined) => {
         if (!prev) return prev
-        const pages = prev.pages.map((p: any) => {
+        const pages = prev.pages.map((p) => {
           const items = p.items.map((m: MessageItem) => {
             if (m.id === context?.tempId || m.tempId === context?.tempId) {
               return {
@@ -124,7 +125,12 @@ export default function MessagesPage() {
             return m
           })
           const exists = items.some((m: MessageItem) => m.id === message.id)
-          return exists ? { ...p, items } : { ...p, items: [...items, message].sort((a: any, b: any) => a.created_at.localeCompare(b.created_at)) }
+          return exists
+            ? { ...p, items }
+            : {
+                ...p,
+                items: [...items, message].sort((a: MessageItem, b: MessageItem) => a.created_at.localeCompare(b.created_at)),
+              }
         })
         return { ...prev, pages }
       })
@@ -132,17 +138,20 @@ export default function MessagesPage() {
       // If new chat was created, move selection and cache
       if (!selectedChat && message?.chat_id) {
         const fromKey = context?.chatIdForCache ?? targetKey
-        const cached = qc.getQueryData<any>(["messages", fromKey])
+        const cached = qc.getQueryData<InfiniteData<MessagesResponse>>(["messages", fromKey])
         if (cached) {
-          const mergedPages = cached.pages.map((p: any) => ({
+          const mergedPages = cached.pages.map((p) => ({
             ...p,
-            items: p.items.map((m: any) =>
+            items: p.items.map((m: MessageItem) =>
               m.id === context?.tempId || m.tempId === context?.tempId
                 ? { ...m, ...message, id: message.id, tempId: undefined, sendStatus: "sent" }
                 : m
             ),
           }))
-          qc.setQueryData(["messages", message.chat_id], { ...cached, pages: mergedPages })
+          qc.setQueryData<InfiniteData<MessagesResponse>>(
+            ["messages", message.chat_id],
+            { ...cached, pages: mergedPages }
+          )
         }
 
         setSelectedChat(message.chat_id)
@@ -190,6 +199,64 @@ export default function MessagesPage() {
     setIsAtBottom(nearBottom)
   }
 
+  const mergeMessageIntoCache = (chatId: string, incoming: MessageItem) => {
+    const normalized: MessageItem = {
+      ...incoming,
+      sendStatus: (incoming.sendStatus ?? "sent") as MessageItem["sendStatus"],
+    }
+    qc.setQueryData<InfiniteData<MessagesResponse> | undefined>(["messages", chatId], (prev: InfiniteData<MessagesResponse> | undefined) => {
+      const base: InfiniteData<MessagesResponse> = {
+        pages: [{ items: [normalized], members: [], nextCursor: null }],
+        pageParams: [undefined],
+      }
+      if (!prev) return base
+
+      let updated = false
+      const pages = prev.pages.map((p) => {
+        const items = p.items.map((m: MessageItem) => {
+          if (
+            m.id === normalized.id ||
+            (normalized.tempId && (m.tempId === normalized.tempId || (!m.id && m.tempId && m.tempId === normalized.tempId))) ||
+            (m.tempId && !normalized.tempId && normalized.body === m.body && normalized.sender_id === m.sender_id)
+          ) {
+            updated = true
+            return {
+              ...m,
+              ...normalized,
+              id: normalized.id ?? m.id,
+              tempId: undefined,
+              sendStatus: normalized.sendStatus ?? "sent",
+              status: normalized.status ?? m.status ?? "sent",
+            }
+          }
+          return m
+        })
+        return { ...p, items }
+      })
+
+      if (updated) {
+        const sortedPages = pages.map((p) => ({
+          ...p,
+          items: [...p.items].sort((a: MessageItem, b: MessageItem) => a.created_at.localeCompare(b.created_at)),
+        }))
+        return { ...prev, pages: sortedPages }
+      }
+
+      const nextPages = [...pages]
+      if (nextPages.length === 0) {
+        nextPages.push({ items: [normalized], members: [], nextCursor: null })
+        return { ...prev, pages: nextPages }
+      }
+
+      const lastIndex = nextPages.length - 1
+      const mergedItems = [...nextPages[lastIndex].items, normalized].sort(
+        (a: MessageItem, b: MessageItem) => a.created_at.localeCompare(b.created_at)
+      )
+      nextPages[lastIndex] = { ...nextPages[lastIndex], items: mergedItems }
+      return { ...prev, pages: nextPages }
+    })
+  }
+
   // Realtime subscription to new messages in selected chat
   useEffect(() => {
     if (!selectedChat) return
@@ -200,38 +267,8 @@ export default function MessagesPage() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${selectedChat}` },
         (payload) => {
-          const newMsg = payload.new as any
-          qc.setQueryData<any>(["messages", selectedChat], (prev) => {
-            if (!prev) return prev
-            let updated = false
-            const pagesMerged = prev.pages.map((p: any) => {
-              const items = p.items.map((m: any) => {
-                if (
-                  m.id === newMsg.id ||
-                  (m.tempId && newMsg.body === m.body && newMsg.sender_id === m.sender_id)
-                ) {
-                  updated = true
-                  return { ...m, ...newMsg, id: newMsg.id, tempId: undefined, sendStatus: "sent", status: newMsg.status }
-                }
-                return m
-              })
-              return { ...p, items }
-            })
-            if (updated) {
-              return { ...prev, pages: pagesMerged }
-            }
-            const nextPages = [...prev.pages]
-            if (nextPages.length === 0) {
-              nextPages.push({ items: [newMsg], members: [], nextCursor: null })
-            } else {
-              const lastIndex = nextPages.length - 1
-              const merged = [...nextPages[lastIndex].items, newMsg].sort((a, b) =>
-                a.created_at.localeCompare(b.created_at)
-              )
-              nextPages[lastIndex] = { ...nextPages[lastIndex], items: merged }
-            }
-            return { ...prev, pages: nextPages }
-          })
+          const newMsg: MessageItem = { ...(payload.new as any), sendStatus: "sent" as MessageItem["sendStatus"] }
+          mergeMessageIntoCache(selectedChat, newMsg)
           qc.invalidateQueries({ queryKey: ["chats"] })
         }
       )
@@ -242,9 +279,8 @@ export default function MessagesPage() {
     }
   }, [qc, selectedChat])
 
-  const allMessages =
-    messagesQuery.data?.pages.flatMap((p) => p.items) ??
-    []
+  const allMessages: MessageItem[] =
+    (messagesQuery.data?.pages ?? []).flatMap((p: MessagesResponse) => p.items)
 
   return (
     <div className="space-y-6">
