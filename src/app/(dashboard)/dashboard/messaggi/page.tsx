@@ -624,7 +624,7 @@ export default function MessagesPage() {
           <div className="relative flex-1 overflow-y-auto p-4 space-y-3" ref={scrollRef} onScroll={handleScroll}>
             {actionTarget ? (
               <div
-                className="absolute inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
+                className="absolute inset-0 z-50 bg-black/30 backdrop-blur-[1px]"
                 onClick={() => setActionTarget(null)}
                 role="presentation"
               />
@@ -670,12 +670,11 @@ export default function MessagesPage() {
                       className={cn(
                         "relative flex py-0.5",
                         mine ? "justify-end" : "justify-start",
-                        dimmed ? "opacity-40 blur-[1px] pointer-events-none" : "",
-                        isActive ? "z-50" : "z-10"
+                        dimmed ? "opacity-40 blur-[1px] pointer-events-none" : ""
                       )}
                     >
                       {isActive ? (
-                        <div className="absolute z-50 -top-12 right-0 flex gap-2 bg-background border rounded-lg shadow-lg px-3 py-2">
+                        <div className="absolute z-60 -top-12 right-0 flex gap-2 bg-background border rounded-lg shadow-lg px-3 py-2">
                           <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "important")}>
                             Importante
                           </Button>
