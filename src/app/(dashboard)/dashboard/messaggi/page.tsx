@@ -285,6 +285,27 @@ export default function MessagesPage() {
     }
   }, [selectedChat])
 
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return
+
+    const postChatState = (chatId: string | null) => {
+      const message = { type: "chat-active", chatId }
+
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage(message)
+        return
+      }
+
+      navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage(message)).catch(() => {})
+    }
+
+    postChatState(selectedChat ?? null)
+
+    return () => {
+      postChatState(null)
+    }
+  }, [selectedChat])
+
   const canSend = composer.trim().length > 0 && (selectedChat || recipient)
 
   const scrollToBottom = () => {
