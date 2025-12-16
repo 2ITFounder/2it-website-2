@@ -9,6 +9,7 @@ type ChatResponse = {
   title: string | null
   is_group: boolean
   updated_at: string | null
+  unread_count: number
   members: Array<{
     user_id: string
     first_name: string | null
@@ -80,6 +81,27 @@ export async function GET() {
     .order("created_at", { ascending: false })
   if (msgErr) return NextResponse.json({ error: msgErr.message }, { status: 500 })
 
+  const { data: unreadNotifs, error: unreadErr } = await supabase
+    .from("notifications")
+    .select("link")
+    .eq("user_id", auth.user.id)
+    .eq("is_read", false)
+    .eq("type", "message")
+  if (unreadErr) return NextResponse.json({ error: unreadErr.message }, { status: 500 })
+
+  const unreadByChat = new Map<string, number>()
+  for (const n of unreadNotifs ?? []) {
+    const link: string | null = (n as any)?.link ?? null
+    if (!link) continue
+    try {
+      const url = new URL(link, "https://dummy.local")
+      const chatId = url.searchParams.get("chatId")
+      if (chatId) unreadByChat.set(chatId, (unreadByChat.get(chatId) ?? 0) + 1)
+    } catch {
+      continue
+    }
+  }
+
   const lastByChat = new Map<string, any>()
   for (const m of messages ?? []) {
     if (!lastByChat.has(m.chat_id)) lastByChat.set(m.chat_id, m)
@@ -93,6 +115,7 @@ export async function GET() {
     title: c.title,
     is_group: c.is_group,
     updated_at: c.updated_at,
+    unread_count: unreadByChat.get(c.id) ?? 0,
     members: (members ?? [])
       .filter((m: any) => m.chat_id === c.id)
       .map((m: any) => {

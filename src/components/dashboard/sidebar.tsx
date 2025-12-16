@@ -7,6 +7,7 @@ import { cn } from "@/src/lib/utils"
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { apiGet } from "@/src/lib/api"
+import { useChats } from "@/src/hooks/useChats"
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -22,6 +23,8 @@ export function DashboardSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const qc = useQueryClient()
+  const chatsQuery = useChats(true)
+  const unreadMessages = (chatsQuery.data?.items ?? []).reduce((sum, c) => sum + (c.unread_count ?? 0), 0)
 
   // ✅ Prefetch 1 volta quando entri in dashboard (migliora primo ingresso nelle pagine)
   useEffect(() => {
@@ -86,7 +89,10 @@ export function DashboardSidebar() {
                 )}
               >
                 <item.icon className="w-5 h-5" />
-                {item.label}
+                <span className="flex-1 text-left">{item.label}</span>
+                {item.href === "/dashboard/messaggi" && unreadMessages > 0 ? (
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 ring-2 ring-background bg-opacity-90" />
+                ) : null}
               </Link>
             )
           })}

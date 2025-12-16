@@ -14,6 +14,7 @@ export type ChatSummary = {
   title: string | null
   is_group: boolean
   updated_at: string | null
+  unread_count: number
   members: ChatMember[]
   last_message?: {
     id: string

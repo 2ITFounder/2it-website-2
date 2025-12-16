@@ -8,6 +8,7 @@ import { Menu, X, Bell, User, MessageCircle } from "lucide-react"
 import { Button } from "@/src/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/src/components/ui/dropdown-menu"
 import { cn } from "@/src/lib/utils"
+import { useChats } from "@/src/hooks/useChats"
 import { NotificationsResponse, useNotifications } from "@/src/hooks/useNotifications"
 
 const navItems = [
@@ -26,9 +27,11 @@ export function DashboardTopbar() {
   const qc = useQueryClient()
 
   const notificationsQuery = useNotifications(true)
+  const chatsQuery = useChats(true)
 
   const unreadCount = notificationsQuery.data?.unreadCount ?? 0
   const notifications = notificationsQuery.data?.items ?? []
+  const unreadMessages = (chatsQuery.data?.items ?? []).reduce((sum, c) => sum + (c.unread_count ?? 0), 0)
 
   const markReadMutation = useMutation({
     mutationFn: async (payload: { ids?: string[]; all?: boolean }) => {
@@ -104,8 +107,11 @@ export function DashboardTopbar() {
         {/* Right Side */}
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
-            <Link href="/dashboard/messaggi" aria-label="Messaggi">
+            <Link href="/dashboard/messaggi" aria-label="Messaggi" className="relative">
               <MessageCircle className="w-5 h-5" />
+              {unreadMessages > 0 ? (
+                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-amber-400 rounded-full ring-2 ring-background" />
+              ) : null}
             </Link>
           </Button>
           <DropdownMenu open={notificationsOpen} onOpenChange={handleOpenNotifications}>

@@ -224,6 +224,7 @@ export default function MessagesPage() {
         body: JSON.stringify({ chatId }),
       })
       qc.invalidateQueries({ queryKey: ["notifications"] })
+      qc.invalidateQueries({ queryKey: ["chats"] })
     } catch {
       // silenzia errori: non blocca l'UX della chat
     }
@@ -537,6 +538,7 @@ export default function MessagesPage() {
                 const last = chat.last_message
                 const others = chat.members.filter((m) => m.user_id !== currentUserId)
                 const label = chat.title || others.map((m) => m.username || m.first_name || m.email).join(", ")
+                const unread = chat.unread_count > 0
 
                 return (
                   <button
@@ -548,7 +550,12 @@ export default function MessagesPage() {
                     onClick={() => handleSelectChat(chat.id)}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium truncate">{label || "Chat"}</div>
+                      <div className="font-medium truncate flex items-center gap-2">
+                        <span className="truncate">{label || "Chat"}</span>
+                        {unread ? (
+                          <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 ring-2 ring-background flex-shrink-0" />
+                        ) : null}
+                      </div>
                       <span className="text-[11px] text-muted-foreground">
                         {last ? new Date(last.created_at).toLocaleTimeString() : ""}
                       </span>
@@ -562,11 +569,13 @@ export default function MessagesPage() {
         </GlassCard>
 
         <GlassCard className="lg:col-span-2 p-0 flex flex-col h-[70vh]">
-          <div className="px-4 py-3 border-b flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="px-4 py-3 border-b flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <MessageSquare className="w-4 h-4" />
-              <div>
-                <div className="font-semibold">{headerTitle}</div>
+              <div className="min-w-0">
+                <div className="font-semibold truncate max-w-[50vw]" title={headerTitle || undefined}>
+                  {headerTitle}
+                </div>
                 {isNewChatMode ? (
                   <div className="text-xs text-muted-foreground">
                     Scegli il destinatario e invia il primo messaggio.
@@ -574,7 +583,7 @@ export default function MessagesPage() {
                 ) : !selectedChat ? null : null}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               {[
                 { label: "Tutti", value: "all" },
                 { label: "Importanti", value: "important" },
@@ -675,17 +684,34 @@ export default function MessagesPage() {
                     >
                       {isActive ? (
                         <div className="absolute z-60 -top-12 right-0 flex gap-2 bg-background border rounded-lg shadow-lg px-3 py-2">
-                          <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "important")}>
-                            Importante
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "idea")}>
-                            Idea
-                          </Button>
-                          {m.tag ? (
-                            <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "none" as any)}>
-                              Normale
-                            </Button>
-                          ) : null}
+                          {m.tag === "important" ? (
+                            <>
+                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "none" as any)}>
+                                Normale
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "idea")}>
+                                Idea
+                              </Button>
+                            </>
+                          ) : m.tag === "idea" ? (
+                            <>
+                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "important")}>
+                                Importante
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "none" as any)}>
+                                Normale
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "important")}>
+                                Importante
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "idea")}>
+                                Idea
+                              </Button>
+                            </>
+                          )}
                           <Button size="sm" variant="destructive" onClick={() => deleteMessage(m)}>
                             Elimina
                           </Button>
