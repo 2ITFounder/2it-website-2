@@ -22,5 +22,9 @@ export function useNotifications(enabled: boolean = true) {
     queryFn: ({ signal }) => apiGet<NotificationsResponse>("/api/notifications?limit=20", signal),
     enabled,
     staleTime: 30_000,
+    refetchInterval: enabled ? 15_000 : false, // aggiornamento continuo per badge/realtime
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev, // evita UI vuota fra mount/unmount
   })
 }

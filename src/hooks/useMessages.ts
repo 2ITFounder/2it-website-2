@@ -37,9 +37,13 @@ export function useMessages(chatId?: string) {
       return apiGet<MessagesResponse>(`/api/messages?${params.toString()}`, signal)
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
+    staleTime: 10_000,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
     refetchOnWindowFocus: true,
     // fallback polling to keep the thread updated if realtime events are missed
     refetchInterval: chatId ? 4000 : false,
     refetchIntervalInBackground: true,
+    placeholderData: (prev) => prev, // evita pagina vuota quando cambi chat rapidamente
   })
 }

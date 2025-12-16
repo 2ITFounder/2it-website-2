@@ -16,6 +16,7 @@ import { normalizeIncoming, sortByCreatedAt } from "./lib/message-helpers"
 import { ChatListItem } from "./components/ChatListItem"
 import { MessageItemBubble } from "./components/MessageItemBubble"
 import { apiDeleteMessage, apiMarkChatNotificationsRead, apiUpdateMessageTag } from "./lib/message-actions"
+import { apiGet } from "@/src/lib/api"
 
 type MessagesData = InfiniteData<MessagesResponse, string | null>
 
@@ -33,6 +34,8 @@ export default function MessagesPage() {
   const [filter, setFilter] = useState<"all" | "important" | "idea">("all")
   const [actionTarget, setActionTarget] = useState<MessageItem | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const scrollPositionsRef = useRef<Record<string, number>>({})
+  const filterPrefetchRef = useRef<Record<string, boolean>>({})
   const prevCountRef = useRef(0)
   const ignoreNextNewBadgeRef = useRef(false) // evita badge quando stiamo solo pre-pendendo vecchi messaggi
   const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -48,6 +51,29 @@ export default function MessagesPage() {
   const users = usersQuery.data ?? []
 
   const selected = useMemo(() => chats.find((c) => c.id === selectedChat) ?? null, [chats, selectedChat])
+
+  // Prefetch la prima chat disponibile per eliminare il primo loading
+  useEffect(() => {
+    const firstChatId = selectedChat || chats[0]?.id
+    if (!firstChatId) return
+    qc.prefetchInfiniteQuery({
+      queryKey: ["messages", firstChatId],
+      initialPageParam: null,
+      queryFn: ({ pageParam = null, signal }) => {
+        const params = new URLSearchParams({ chat_id: firstChatId, limit: "30" })
+        if (pageParam) params.set("before", pageParam)
+        return apiGet<MessagesResponse>(`/api/messages?${params.toString()}`, signal)
+      },
+    })
+  }, [chats, qc, selectedChat])
+
+  // Prefetch lista utenti chat una volta sola per evitare attese nel composer
+  useEffect(() => {
+    qc.prefetchQuery({
+      queryKey: ["chat-users"],
+      queryFn: ({ signal }) => apiGet("/api/messages/users", signal),
+    })
+  }, [qc])
 
   const sendMutation = useMutation({
     mutationFn: async (variables: { body: string }) => {
@@ -339,6 +365,9 @@ export default function MessagesPage() {
   const handleScroll = () => {
     const container = scrollRef.current
     if (!container) return
+    // salva posizione corrente per il filtro attivo (per chat)
+    const key = `${selectedChat ?? "global"}-${filter}`
+    scrollPositionsRef.current[key] = container.scrollTop
     const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80
     setIsAtBottom(nearBottom)
 
@@ -488,6 +517,40 @@ export default function MessagesPage() {
     return allMessages
   }, [allMessages, filter])
 
+  const handleFilterChange = (next: typeof filter) => {
+    if (next === filter) return
+    const container = scrollRef.current
+    if (container) {
+      const key = `${selectedChat ?? "global"}-${filter}`
+      scrollPositionsRef.current[key] = container.scrollTop
+    }
+    setFilter(next)
+  }
+
+  // quando cambi filtro, ripristina la posizione di scroll precedente
+  useEffect(() => {
+    const key = `${selectedChat ?? "global"}-${filter}`
+    const saved = scrollPositionsRef.current[key] ?? 0
+    requestAnimationFrame(() => {
+      const el = scrollRef.current
+      if (el) el.scrollTop = saved
+    })
+  }, [filter, filteredMessages.length, selectedChat])
+
+  // pre-carica messaggi extra quando si entra in "Importanti" o "Idee" per evitare spinner
+  useEffect(() => {
+    if (!selectedChat) return
+    if (filter === "all") return
+    const key = `${selectedChat}-${filter}`
+    if (filterPrefetchRef.current[key]) return
+    if (messagesQuery.hasNextPage && !messagesQuery.isFetchingNextPage) {
+      filterPrefetchRef.current[key] = true
+      void messagesQuery.fetchNextPage().catch(() => {
+        filterPrefetchRef.current[key] = false
+      })
+    }
+  }, [filter, messagesQuery, selectedChat])
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -551,7 +614,7 @@ export default function MessagesPage() {
                   key={f.value}
                   variant={filter === f.value ? "secondary" : "ghost"}
                   size="sm"
-                  onClick={() => setFilter(f.value as typeof filter)}
+                  onClick={() => handleFilterChange(f.value as typeof filter)}
                 >
                   {f.label}
                 </Button>

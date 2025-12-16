@@ -1,15 +1,17 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Menu, X, Bell, User, MessageCircle } from "lucide-react"
 import { Button } from "@/src/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/src/components/ui/dropdown-menu"
 import { cn } from "@/src/lib/utils"
 import { useChats } from "@/src/hooks/useChats"
-import { NotificationsResponse, useNotifications } from "@/src/hooks/useNotifications"
+import { NotificationItem, NotificationsResponse, useNotifications } from "@/src/hooks/useNotifications"
+import { apiGet } from "@/src/lib/api"
+import { createSupabaseBrowserClient } from "@/src/lib/supabase/client"
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
@@ -22,6 +24,7 @@ const navItems = [
 
 export function DashboardTopbar() {
   const pathname = usePathname()
+  const router = useRouter()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const qc = useQueryClient()
@@ -85,6 +88,89 @@ export function DashboardTopbar() {
     const d = new Date(updatedAt)
     return `Aggiornato ${d.toLocaleDateString("it-IT", { day: "2-digit", month: "short" })}`
   }, [notificationsQuery.data])
+
+  // Prefetch rotte e dati base per evitare vuoti su mobile/prime aperture
+  useEffect(() => {
+    router.prefetch("/dashboard/messaggi")
+    router.prefetch("/dashboard/impostazioni")
+    qc.prefetchQuery({ queryKey: ["notifications"], queryFn: ({ signal }) => apiGet("/api/notifications?limit=20", signal) })
+    qc.prefetchQuery({ queryKey: ["chats"], queryFn: ({ signal }) => apiGet("/api/messages/chats", signal) })
+  }, [qc, router])
+
+  // Realtime notifiche + chat: merge diretto in cache, no invalidazioni pesanti
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient()
+
+    const mergeNotification = (notif: NotificationItem) => {
+      qc.setQueryData<NotificationsResponse>(["notifications"], (prev) => {
+        const base: NotificationsResponse = prev ?? { items: [], unreadCount: 0 }
+        const existing = new Map(base.items.map((n) => [n.id, n]))
+        existing.set(notif.id, notif)
+        const items = Array.from(existing.values()).sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        )
+        const unreadCount = items.reduce((acc, n) => acc + (n.is_read ? 0 : 1), 0)
+        if (process.env.NODE_ENV !== "production") console.debug("[RT][notif] merge", notif.id)
+        return { items, unreadCount }
+      })
+    }
+
+    const mergeChatFromMessage = (payload: any) => {
+      const msg = payload?.new as any
+      if (!msg?.chat_id) return
+      const messageMeta = {
+        id: msg.id,
+        body: msg.body ?? "",
+        created_at: msg.created_at,
+        sender_id: msg.sender_id,
+        status: msg.status ?? "sent",
+      }
+
+      qc.setQueryData<{ items: any[]; currentUserId: string }>(["chats"], (prev) => {
+        if (!prev) return prev
+        const currentUserId = prev.currentUserId
+        const items = prev.items.map((c) => {
+          if (c.id !== msg.chat_id) return c
+          const unreadBump = msg.sender_id && msg.sender_id !== currentUserId ? 1 : 0
+          return {
+            ...c,
+            unread_count: (c.unread_count ?? 0) + unreadBump,
+            updated_at: msg.created_at ?? c.updated_at,
+            last_message: { ...(c.last_message ?? {}), ...messageMeta },
+          }
+        })
+
+        // Keep ordering by updated_at desc
+        const ordered = [...items].sort(
+          (a, b) => new Date(b.updated_at ?? b.last_message?.created_at ?? 0).getTime() -
+            new Date(a.updated_at ?? a.last_message?.created_at ?? 0).getTime(),
+        )
+
+        if (process.env.NODE_ENV !== "production") console.debug("[RT][chat] msg", msg.id, msg.chat_id)
+        return { ...prev, items: ordered }
+      })
+    }
+
+    const notifChannel = supabase
+      .channel("notifications-live")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, (payload) => {
+        mergeNotification(payload.new as NotificationItem)
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications" }, (payload) => {
+        mergeNotification(payload.new as NotificationItem)
+      })
+      .subscribe()
+
+    const chatChannel = supabase
+      .channel("messages-live")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, mergeChatFromMessage)
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(notifChannel)
+      supabase.removeChannel(chatChannel)
+    }
+  }, [qc])
 
   return (
     <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-sm border-b">

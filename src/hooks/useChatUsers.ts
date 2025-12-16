@@ -14,5 +14,9 @@ export function useChatUsers() {
     queryKey: ["chat-users"],
     queryFn: ({ signal }) => apiGet<ChatUser[]>("/api/messages/users", signal),
     staleTime: 60_000,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev, // mantiene la lista utenti tra navigazioni
   })
 }

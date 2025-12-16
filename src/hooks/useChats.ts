@@ -30,6 +30,10 @@ export function useChats(enabled = true) {
     queryKey: ["chats"],
     queryFn: ({ signal }) => apiGet<{ items: ChatSummary[]; currentUserId: string }>("/api/messages/chats", signal),
     enabled,
-    staleTime: 15_000,
+    staleTime: 45_000,
+    refetchInterval: enabled ? 12_000 : false, // aggiorna badge non letti senza click
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev, // mantiene ordering e badge fra navigation
   })
 }
