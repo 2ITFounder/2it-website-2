@@ -12,16 +12,12 @@ import { MessageItem, useMessages, type MessagesResponse } from "@/src/hooks/use
 import { useChatUsers } from "@/src/hooks/useChatUsers"
 import { cn } from "@/src/lib/utils"
 import { createSupabaseBrowserClient } from "@/src/lib/supabase/client"
+import { normalizeIncoming, sortByCreatedAt } from "./lib/message-helpers"
+import { ChatListItem } from "./components/ChatListItem"
+import { MessageItemBubble } from "./components/MessageItemBubble"
+import { apiDeleteMessage, apiMarkChatNotificationsRead, apiUpdateMessageTag } from "./lib/message-actions"
 
 type MessagesData = InfiniteData<MessagesResponse, string | null>
-
-function sortByCreatedAt(a: MessageItem, b: MessageItem) {
-  return a.created_at.localeCompare(b.created_at)
-}
-
-function normalizeIncoming(incoming: MessageItem): MessageItem {
-  return { ...incoming, sendStatus: incoming.sendStatus ?? "sent" }
-}
 
 export default function MessagesPage() {
   const params = useSearchParams()
@@ -218,11 +214,7 @@ export default function MessagesPage() {
 
   const markChatNotificationsRead = async (chatId: string) => {
     try {
-      await fetch("/api/notifications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId }),
-      })
+      await apiMarkChatNotificationsRead(chatId)
       qc.invalidateQueries({ queryKey: ["notifications"] })
       qc.invalidateQueries({ queryKey: ["chats"] })
     } catch {
@@ -239,14 +231,7 @@ export default function MessagesPage() {
   const updateMessageTag = async (msg: MessageItem, tag: "important" | "idea") => {
     if (!msg?.id) return
     try {
-      const res = await fetch("/api/messages", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: msg.id, tag }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json?.error ?? "Errore aggiornamento")
-      const updated = json?.data as MessageItem
+      const updated = await apiUpdateMessageTag(msg, tag)
       mergeMessageIntoCache(msg.chat_id, normalizeIncoming(updated))
       qc.invalidateQueries({ queryKey: ["messages", msg.chat_id] })
       qc.invalidateQueries({ queryKey: ["notifications"] })
@@ -262,13 +247,7 @@ export default function MessagesPage() {
     const confirmed = typeof window !== "undefined" ? window.confirm("Eliminare questo messaggio?") : true
     if (!confirmed) return
     try {
-      const res = await fetch("/api/messages", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: msg.id }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json?.error ?? "Errore eliminazione")
+      await apiDeleteMessage(msg)
       removeMessageFromCache(msg.chat_id, msg.id)
       qc.invalidateQueries({ queryKey: ["messages", msg.chat_id] })
       qc.invalidateQueries({ queryKey: ["chats"] })
@@ -531,40 +510,19 @@ export default function MessagesPage() {
           <div className="max-h-[70vh] overflow-y-auto divide-y">
             {chatsQuery.isLoading ? (
               <div className="p-4 text-sm text-muted-foreground">Caricamento...</div>
-            ) : chats.length === 0 ? (
-              <div className="p-4 text-sm text-muted-foreground">Nessuna chat</div>
-            ) : (
-              chats.map((chat) => {
-                const last = chat.last_message
-                const others = chat.members.filter((m) => m.user_id !== currentUserId)
-                const label = chat.title || others.map((m) => m.username || m.first_name || m.email).join(", ")
-                const unread = chat.unread_count > 0
-
-                return (
-                  <button
+              ) : chats.length === 0 ? (
+                <div className="p-4 text-sm text-muted-foreground">Nessuna chat</div>
+              ) : (
+                chats.map((chat) => (
+                  <ChatListItem
                     key={chat.id}
-                    className={cn(
-                      "w-full text-left px-4 py-3 hover:bg-muted/70 transition",
-                      selectedChat === chat.id ? "bg-muted/60" : ""
-                    )}
-                    onClick={() => handleSelectChat(chat.id)}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium truncate flex items-center gap-2">
-                        <span className="truncate">{label || "Chat"}</span>
-                        {unread ? (
-                          <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 ring-2 ring-background flex-shrink-0" />
-                        ) : null}
-                      </div>
-                      <span className="text-[11px] text-muted-foreground">
-                        {last ? new Date(last.created_at).toLocaleTimeString() : ""}
-                      </span>
-                    </div>
-                    <div className="text-sm text-muted-foreground truncate">{last ? last.body : "Nessun messaggio"}</div>
-                  </button>
-                )
-              })
-            )}
+                    chat={chat}
+                    currentUserId={currentUserId}
+                    selectedChatId={selectedChat}
+                    onSelect={handleSelectChat}
+                  />
+                ))
+              )}
           </div>
         </GlassCard>
 
@@ -664,99 +622,19 @@ export default function MessagesPage() {
                   const mine = m.sender_id === currentUserId
                   const isActive = actionTarget?.id === m.id
                   const dimmed = Boolean(actionTarget && !isActive)
-                  const tagClass =
-                    m.tag === "important"
-                      ? "border border-red-200 bg-red-50 text-red-900"
-                      : m.tag === "idea"
-                        ? "border border-emerald-200 bg-emerald-50 text-emerald-900"
-                        : mine
-                          ? "bg-accent text-accent-foreground"
-                          : "bg-muted text-foreground"
 
                   return (
-                    <div
+                    <MessageItemBubble
                       key={m.id}
-                      className={cn(
-                        "relative flex py-0.5",
-                        mine ? "justify-end" : "justify-start",
-                        dimmed ? "opacity-40 blur-[1px] pointer-events-none" : ""
-                      )}
-                    >
-                      {isActive ? (
-                        <div className="absolute z-60 -top-12 right-0 flex gap-2 bg-background border rounded-lg shadow-lg px-3 py-2">
-                          {m.tag === "important" ? (
-                            <>
-                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "none" as any)}>
-                                Normale
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "idea")}>
-                                Idea
-                              </Button>
-                            </>
-                          ) : m.tag === "idea" ? (
-                            <>
-                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "important")}>
-                                Importante
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "none" as any)}>
-                                Normale
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "important")}>
-                                Importante
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "idea")}>
-                                Idea
-                              </Button>
-                            </>
-                          )}
-                          <Button size="sm" variant="destructive" onClick={() => deleteMessage(m)}>
-                            Elimina
-                          </Button>
-                        </div>
-                      ) : null}
-
-                      <div
-                        className={cn(
-                          "px-3 py-2 rounded-lg max-w-lg text-sm border",
-                          tagClass,
-                          isActive ? "ring-2 ring-offset-2 ring-accent" : ""
-                        )}
-                        onClick={() => setActionTarget(m)}
-                        onPointerDown={(e) => {
-                          if (e.button !== 0) return
-                          if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
-                          holdTimeoutRef.current = setTimeout(() => setActionTarget(m), 350)
-                        }}
-                        onPointerUp={() => {
-                          if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
-                        }}
-                        onPointerCancel={() => {
-                          if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
-                        }}
-                        onPointerLeave={() => {
-                          if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault()
-                          setActionTarget(m)
-                        }}
-                      >
-                        <div className="whitespace-pre-wrap">{m.body}</div>
-                        <div className="text-[11px] opacity-80 mt-1 flex items-center gap-2">
-                          <span>{new Date(m.created_at).toLocaleTimeString()}</span>
-                          {m.tag ? <span className="uppercase font-semibold">{m.tag}</span> : null}
-                          {m.sendStatus === "sending" ? <span>Invio...</span> : null}
-                          {m.sendStatus === "failed" ? (
-                            <button className="text-destructive underline underline-offset-2" onClick={() => handleRetry(m)}>
-                              Ritenta
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
+                      message={m}
+                      isMine={mine}
+                      isActive={isActive}
+                      dimmed={dimmed}
+                      onOpenActions={setActionTarget}
+                      onUpdateTag={updateMessageTag as any}
+                      onDelete={deleteMessage}
+                      onRetry={handleRetry}
+                    />
                   )
                 })}
 

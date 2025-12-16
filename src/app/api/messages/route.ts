@@ -4,6 +4,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createSupabaseRouteClient } from "@/src/lib/supabase/route"
 import { createSupabaseServiceClient } from "@/src/lib/supabase/service"
+import { ensureChatMembership } from "@/src/features/messages/server/message-service"
 import { notifyUsers } from "@/src/lib/push/server"
 
 const MessagePostSchema = z.object({
@@ -27,18 +28,6 @@ const MessageUpdateSchema = z.object({
 const MessageDeleteSchema = z.object({
   id: z.string().uuid(),
 })
-
-async function ensureChatMembership(supabase: ReturnType<typeof createSupabaseServiceClient>, chatId: string, userId: string) {
-  const { data, error } = await supabase.from("chat_members").select("user_id").eq("chat_id", chatId)
-  if (error) throw new Error(error.message)
-  const members = (data ?? []).map((r: any) => r.user_id)
-  if (!members.includes(userId)) {
-    const err: any = new Error("Forbidden")
-    err.status = 403
-    throw err
-  }
-  return members
-}
 
 export async function GET(req: Request) {
   const supabaseAuth = await createSupabaseRouteClient()
