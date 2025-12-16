@@ -37,5 +37,8 @@ export function useMessages(chatId?: string) {
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     refetchOnWindowFocus: true,
+    // fallback polling to keep the thread updated if realtime events are missed
+    refetchInterval: chatId ? 4000 : false,
+    refetchIntervalInBackground: true,
   })
 }
