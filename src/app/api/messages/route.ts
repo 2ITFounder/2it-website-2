@@ -47,7 +47,7 @@ export async function GET(req: Request) {
   const supabase = createSupabaseServiceClient()
 
   try {
-    const members = await ensureChatMembership(supabase, parsed.data.chat_id, auth.user.id)
+    const members = await ensureChatMembership(parsed.data.chat_id, auth.user.id)
 
     const limit = parsed.data.limit ?? 50
     let query = supabase
@@ -98,7 +98,7 @@ export async function POST(req: Request) {
 
   try {
     if (chatId) {
-      members = await ensureChatMembership(supabase, chatId, auth.user.id)
+      members = await ensureChatMembership(chatId, auth.user.id)
     } else {
       const receiverId = parsed.data.receiver_id
       if (!receiverId) return NextResponse.json({ error: "receiver_id richiesto" }, { status: 400 })
@@ -195,7 +195,7 @@ export async function PATCH(req: Request) {
     if (fetchErr) throw fetchErr
     if (!messageRow) return NextResponse.json({ error: "Messaggio non trovato" }, { status: 404 })
 
-    await ensureChatMembership(supabase, messageRow.chat_id, auth.user.id)
+    await ensureChatMembership(messageRow.chat_id, auth.user.id)
 
     const nextTag = parsed.data.tag === "none" ? null : parsed.data.tag
     const { data, error } = await supabase
@@ -233,7 +233,7 @@ export async function DELETE(req: Request) {
     if (fetchErr) throw fetchErr
     if (!messageRow) return NextResponse.json({ error: "Messaggio non trovato" }, { status: 404 })
 
-    await ensureChatMembership(supabase, messageRow.chat_id, auth.user.id)
+    await ensureChatMembership(messageRow.chat_id, auth.user.id)
 
     const { error } = await supabase.from("messages").delete().eq("id", parsed.data.id)
     if (error) throw error
