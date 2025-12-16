@@ -46,7 +46,7 @@ async function ensureServiceWorkerReady(): Promise<ServiceWorkerRegistration> {
   return await navigator.serviceWorker.ready
 }
 
-async function subscribePush(): Promise<PushSubscription> {
+async function subscribePush(forceNew = false): Promise<PushSubscription> {
   const vapidPublicKey =
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY
   if (!vapidPublicKey) throw new Error("Manca la chiave VAPID pubblica")
@@ -59,7 +59,8 @@ async function subscribePush(): Promise<PushSubscription> {
 
   const reg = await ensureServiceWorkerReady()
   const existing = await reg.pushManager.getSubscription()
-  if (existing) return existing
+  if (existing && !forceNew) return existing
+  if (existing && forceNew) await existing.unsubscribe().catch(() => {})
 
   return await reg.pushManager.subscribe({
     userVisibleOnly: true,
@@ -198,8 +199,8 @@ export default function ImpostazioniPage() {
 
   try {
     if (checked) {
-      // 1) subscribe browser
-      const sub = await subscribePush()
+      // 1) subscribe browser (forza rinnovo per evitare sub vecchie non valide)
+      const sub = await subscribePush(true)
 
       // 2) salva subscription
       const res = await fetch("/api/push/subscribe", {

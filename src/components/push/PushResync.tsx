@@ -18,12 +18,7 @@ async function ensureServiceWorkerReady(): Promise<ServiceWorkerRegistration> {
 
 async function resyncPushSubscription() {
   try {
-    if (
-      !("serviceWorker" in navigator) ||
-      !("PushManager" in window) ||
-      !("Notification" in window)
-    )
-      return
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return
 
     // non chiediamo permessi qui: solo se già concessi
     if (Notification.permission !== "granted") return
@@ -38,22 +33,43 @@ async function resyncPushSubscription() {
     if (!vapidPublicKey) return
 
     const reg = await ensureServiceWorkerReady()
-    const existing = await reg.pushManager.getSubscription()
-    const subscription =
-      existing ??
-      (await reg.pushManager.subscribe({
+    let subscription = await reg.pushManager.getSubscription()
+
+    const subscribeFresh = async () =>
+      await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-      }))
+      })
 
-    // idempotente: il backend può upsert su endpoint
-    await fetch("/api/push/subscribe", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(subscription),
-    }).catch((err) => {
-      if (process.env.NODE_ENV !== "production") console.warn("[push] resync subscribe fail", err)
-    })
+    if (!subscription) {
+      subscription = await subscribeFresh()
+    }
+
+    // idempotente: il backend può upsert su endpoint. Se fallisce, forza re-subscribe una volta.
+    const sendToServer = async (sub: PushSubscription) => {
+      const res = await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub),
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => "")
+        throw new Error(text || res.statusText)
+      }
+    }
+
+    try {
+      await sendToServer(subscription)
+    } catch (err) {
+      if (process.env.NODE_ENV !== "production") console.warn("[push] resync upsert fail, retrying", err)
+      try {
+        await subscription.unsubscribe().catch(() => {})
+        subscription = await subscribeFresh()
+        await sendToServer(subscription)
+      } catch (err2) {
+        if (process.env.NODE_ENV !== "production") console.warn("[push] resync retry fail", err2)
+      }
+    }
   } catch (e) {
     if (process.env.NODE_ENV !== "production") console.warn("[push] resync error", e)
     // non bloccare la UI se fallisce
