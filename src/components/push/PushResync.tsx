@@ -34,7 +34,7 @@ async function resyncPushSubscription() {
     const pushEnabled = Boolean(settings?.notifications_push)
     if (!pushEnabled) return
 
-    const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY
     if (!vapidPublicKey) return
 
     const reg = await ensureServiceWorkerReady()
@@ -51,8 +51,11 @@ async function resyncPushSubscription() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(subscription),
-    }).catch(() => {})
-  } catch {
+    }).catch((err) => {
+      if (process.env.NODE_ENV !== "production") console.warn("[push] resync subscribe fail", err)
+    })
+  } catch (e) {
+    if (process.env.NODE_ENV !== "production") console.warn("[push] resync error", e)
     // non bloccare la UI se fallisce
   }
 }

@@ -47,8 +47,9 @@ async function ensureServiceWorkerReady(): Promise<ServiceWorkerRegistration> {
 }
 
 async function subscribePush(): Promise<PushSubscription> {
-  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-  if (!vapidPublicKey) throw new Error("Manca NEXT_PUBLIC_VAPID_PUBLIC_KEY")
+  const vapidPublicKey =
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY
+  if (!vapidPublicKey) throw new Error("Manca la chiave VAPID pubblica")
 
   if (!("Notification" in window)) throw new Error("Notifiche non supportate")
   if (!("PushManager" in window)) throw new Error("Push non supportato")
