@@ -314,7 +314,9 @@ export default function MessagesPage() {
         (payload) => {
           const newMsg = normalizeIncoming(payload.new as any as MessageItem)
           mergeMessageIntoCache(selectedChat, newMsg)
-          // refresh sidebar ordering/last message, but avoid re-fetch of messages (già aggiornati in cache)
+          // fallback refetch in caso di desync della cache
+          qc.invalidateQueries({ queryKey: ["messages", selectedChat] })
+          // refresh sidebar ordering/last message
           qc.invalidateQueries({ queryKey: ["chats"] })
         }
       )

@@ -16,15 +16,15 @@ import { ProjectRow, STATUS_LABEL, clampProgress, formatDueDate, statusPillClass
 export function ProjectCard({
   project,
   clientName,
-  onEdit,
-  onDelete,
-  onOpenDetail, 
+  onEditAction,
+  onDeleteAction,
+  onOpenDetailAction, 
 }: {
   project: ProjectRow
   clientName: string
-  onEdit: (p: ProjectRow) => void
-  onDelete: (p: ProjectRow) => void
-  onOpenDetail: (p: ProjectRow) => void
+  onEditAction: (p: ProjectRow) => void
+  onDeleteAction: (p: ProjectRow) => void
+  onOpenDetailAction: (p: ProjectRow) => void
 }) {
   const statusLabel = STATUS_LABEL[project.status] ?? project.status
   const progress = clampProgress(project.progress)
@@ -34,10 +34,10 @@ export function ProjectCard({
     <GlassCard hover>
       <div
         className="cursor-pointer"
-        onClick={() => onOpenDetail(project)}
+        onClick={() => onOpenDetailAction(project)}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => e.key === "Enter" && onOpenDetail(project)} 
+        onKeyDown={(e) => e.key === "Enter" && onOpenDetailAction(project)} 
       >
         <div className="flex items-start justify-between mb-4">
           <div className="min-w-0">
@@ -61,10 +61,10 @@ export function ProjectCard({
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onEdit(project)}>Modifica</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onEditAction(project)}>Modifica</DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => onDelete(project)}
+                  onClick={() => onDeleteAction(project)}
                   className="text-destructive focus:text-destructive"
                 >
                   Elimina

@@ -153,9 +153,9 @@ export default function ProgettiDashboardPage() {
         loading={loading}
         projects={filtered}
         clientNameById={clientNameById}
-        onEdit={handleEditOpen}
-        onDelete={handleAskDelete}
-        onOpenDetail={openDetail}
+        onEditAction={handleEditOpen}
+        onDeleteAction={handleAskDelete}
+        onOpenDetailAction={openDetail}
       />
 
       <ProjectCreateDialog

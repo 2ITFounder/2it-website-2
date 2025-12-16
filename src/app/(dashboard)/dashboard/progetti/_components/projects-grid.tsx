@@ -7,16 +7,16 @@ export function ProjectsGrid({
   loading,
   projects,
   clientNameById,
-  onEdit,
-  onDelete,
-  onOpenDetail,
+  onEditAction,
+  onDeleteAction,
+  onOpenDetailAction,
 }: {
   loading: boolean
   projects: ProjectRow[]
   clientNameById: (clientId: string) => string
-  onEdit: (p: ProjectRow) => void
-  onDelete: (p: ProjectRow) => void
-  onOpenDetail: (p: ProjectRow) => void
+  onEditAction: (p: ProjectRow) => void
+  onDeleteAction: (p: ProjectRow) => void
+  onOpenDetailAction: (p: ProjectRow) => void
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -30,9 +30,9 @@ export function ProjectsGrid({
             key={p.id}
             project={p}
             clientName={clientNameById(p.client_id)}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            onOpenDetail={onOpenDetail}
+            onEditAction={onEditAction}
+            onDeleteAction={onDeleteAction}
+            onOpenDetailAction={onOpenDetailAction}
           />
         ))
       )}
