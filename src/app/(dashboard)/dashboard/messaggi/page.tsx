@@ -346,6 +346,16 @@ export default function MessagesPage() {
     prevCountRef.current = total
   }, [messagesQuery.data, isAtBottom])
 
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setActionTarget(null)
+    }
+    if (actionTarget) {
+      document.addEventListener("keydown", handleEsc)
+    }
+    return () => document.removeEventListener("keydown", handleEsc)
+  }, [actionTarget])
+
   const handleScroll = () => {
     const container = scrollRef.current
     if (!container) return
@@ -616,6 +626,7 @@ export default function MessagesPage() {
               <div
                 className="absolute inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
                 onClick={() => setActionTarget(null)}
+                role="presentation"
               />
             ) : null}
 
@@ -657,30 +668,11 @@ export default function MessagesPage() {
                     <div
                       key={m.id}
                       className={cn(
-                        "relative flex",
+                        "relative flex py-0.5",
                         mine ? "justify-end" : "justify-start",
                         dimmed ? "opacity-40 blur-[1px] pointer-events-none" : "",
                         isActive ? "z-50" : "z-10"
                       )}
-                      onClick={() => setActionTarget(m)}
-                      onPointerDown={(e) => {
-                        if (e.button !== 0) return
-                        if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
-                        holdTimeoutRef.current = setTimeout(() => setActionTarget(m), 350)
-                      }}
-                      onPointerUp={() => {
-                        if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
-                      }}
-                      onPointerCancel={() => {
-                        if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
-                      }}
-                      onPointerLeave={() => {
-                        if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
-                      }}
-                      onContextMenu={(e) => {
-                        e.preventDefault()
-                        setActionTarget(m)
-                      }}
                     >
                       {isActive ? (
                         <div className="absolute z-50 -top-12 right-0 flex gap-2 bg-background border rounded-lg shadow-lg px-3 py-2">
@@ -702,6 +694,25 @@ export default function MessagesPage() {
                           tagClass,
                           isActive ? "ring-2 ring-offset-2 ring-accent" : ""
                         )}
+                        onClick={() => setActionTarget(m)}
+                        onPointerDown={(e) => {
+                          if (e.button !== 0) return
+                          if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
+                          holdTimeoutRef.current = setTimeout(() => setActionTarget(m), 350)
+                        }}
+                        onPointerUp={() => {
+                          if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
+                        }}
+                        onPointerCancel={() => {
+                          if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
+                        }}
+                        onPointerLeave={() => {
+                          if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          setActionTarget(m)
+                        }}
                       >
                         <div className="whitespace-pre-wrap">{m.body}</div>
                         <div className="text-[11px] opacity-80 mt-1 flex items-center gap-2">
