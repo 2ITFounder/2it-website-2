@@ -3,11 +3,13 @@ import { apiGet } from "@/src/lib/api"
 
 export type MessageItem = {
   id: string
+  tempId?: string
   chat_id: string
   sender_id: string
   body: string
   status: string
   created_at: string
+  sendStatus?: "sending" | "failed" | "sent"
 }
 
 export type MessagesResponse = {

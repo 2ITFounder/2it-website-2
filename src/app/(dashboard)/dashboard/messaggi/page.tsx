@@ -9,7 +9,7 @@ import { Button } from "@/src/components/ui/button"
 import { Input } from "@/src/components/ui/input"
 import { Textarea } from "@/src/components/ui/textarea"
 import { useChats } from "@/src/hooks/useChats"
-import { useMessages } from "@/src/hooks/useMessages"
+import { MessageItem, useMessages } from "@/src/hooks/useMessages"
 import { useChatUsers } from "@/src/hooks/useChatUsers"
 import { cn } from "@/src/lib/utils"
 import { createSupabaseBrowserClient } from "@/src/lib/supabase/client"
@@ -38,8 +38,8 @@ export default function MessagesPage() {
   const selected = useMemo(() => chats.find((c) => c.id === selectedChat) ?? null, [chats, selectedChat])
 
   const sendMutation = useMutation({
-    mutationFn: async () => {
-      const payload: Record<string, any> = { body: composer.trim() }
+    mutationFn: async (variables: { body: string }) => {
+      const payload: Record<string, any> = { body: variables.body }
       if (selectedChat) payload.chat_id = selectedChat
       else payload.receiver_id = recipient
 
@@ -52,9 +52,99 @@ export default function MessagesPage() {
       if (!res.ok) throw new Error(json?.error ?? "Errore invio")
       return json.data
     },
-    onSuccess: (message) => {
+    onMutate: async (variables) => {
+      if (!variables.body.trim()) return
+      const tempId = `temp-${crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)}`
+      const chatIdForCache = selectedChat ?? undefined
+      const optimisticMsg: MessageItem = {
+        id: tempId,
+        tempId,
+        chat_id: selectedChat ?? "pending",
+        sender_id: currentUserId ?? "me",
+        body: variables.body,
+        status: "sending",
+        sendStatus: "sending",
+        created_at: new Date().toISOString(),
+      }
+
+      await qc.cancelQueries({ queryKey: ["messages", chatIdForCache] })
+
+      qc.setQueryData<any>(["messages", chatIdForCache], (prev) => {
+        if (!prev) {
+          return { pages: [{ items: [optimisticMsg], members: [], nextCursor: null }], pageParams: [undefined] }
+        }
+        const pages = [...prev.pages]
+        const lastIndex = pages.length - 1
+        const updatedItems = [...pages[lastIndex].items, optimisticMsg].sort((a, b) =>
+          a.created_at.localeCompare(b.created_at)
+        )
+        pages[lastIndex] = { ...pages[lastIndex], items: updatedItems }
+        return { ...prev, pages }
+      })
+
       setComposer("")
+
+      return { tempId, chatIdForCache }
+    },
+    onError: (_error, _variables, context) => {
+      if (!context) return
+      qc.setQueryData<any>(["messages", context.chatIdForCache], (prev) => {
+        if (!prev) return prev
+        const pages = prev.pages.map((p: any) => ({
+          ...p,
+          items: p.items.map((m: MessageItem) =>
+            m.id === context.tempId || m.tempId === context.tempId
+              ? { ...m, sendStatus: "failed", status: "failed" }
+              : m
+          ),
+        }))
+        return { ...prev, pages }
+      })
+    },
+    onSuccess: (message, _vars, context) => {
+      if (!message) return
+
+      const targetKey = selectedChat ?? context?.chatIdForCache ?? undefined
+
+      // reconcile optimistic message
+      qc.setQueryData<any>(["messages", targetKey], (prev) => {
+        if (!prev) return prev
+        const pages = prev.pages.map((p: any) => {
+          const items = p.items.map((m: MessageItem) => {
+            if (m.id === context?.tempId || m.tempId === context?.tempId) {
+              return {
+                ...m,
+                ...message,
+                id: message.id,
+                tempId: undefined,
+                status: message.status ?? "sent",
+                sendStatus: "sent",
+              }
+            }
+            return m
+          })
+          const exists = items.some((m: MessageItem) => m.id === message.id)
+          return exists ? { ...p, items } : { ...p, items: [...items, message].sort((a: any, b: any) => a.created_at.localeCompare(b.created_at)) }
+        })
+        return { ...prev, pages }
+      })
+
+      // If new chat was created, move selection and cache
       if (!selectedChat && message?.chat_id) {
+        const fromKey = context?.chatIdForCache ?? targetKey
+        const cached = qc.getQueryData<any>(["messages", fromKey])
+        if (cached) {
+          const mergedPages = cached.pages.map((p: any) => ({
+            ...p,
+            items: p.items.map((m: any) =>
+              m.id === context?.tempId || m.tempId === context?.tempId
+                ? { ...m, ...message, id: message.id, tempId: undefined, sendStatus: "sent" }
+                : m
+            ),
+          }))
+          qc.setQueryData(["messages", message.chat_id], { ...cached, pages: mergedPages })
+        }
+
         setSelectedChat(message.chat_id)
         router.replace(`/dashboard/messaggi?chatId=${message.chat_id}`)
       }
@@ -75,6 +165,12 @@ export default function MessagesPage() {
     setSelectedChat(id)
     setRecipient("")
     router.replace(`/dashboard/messaggi?chatId=${id}`)
+  }
+
+  const handleRetry = (msg: MessageItem) => {
+    if (!msg?.body) return
+    setComposer(msg.body)
+    sendMutation.mutate({ body: msg.body })
   }
 
   const canSend = composer.trim().length > 0 && (selectedChat || recipient)
@@ -107,8 +203,23 @@ export default function MessagesPage() {
           const newMsg = payload.new as any
           qc.setQueryData<any>(["messages", selectedChat], (prev) => {
             if (!prev) return prev
-            const exists = prev.pages.some((p: any) => p.items.find((m: any) => m.id === newMsg.id))
-            if (exists) return prev
+            let updated = false
+            const pagesMerged = prev.pages.map((p: any) => {
+              const items = p.items.map((m: any) => {
+                if (
+                  m.id === newMsg.id ||
+                  (m.tempId && newMsg.body === m.body && newMsg.sender_id === m.sender_id)
+                ) {
+                  updated = true
+                  return { ...m, ...newMsg, id: newMsg.id, tempId: undefined, sendStatus: "sent", status: newMsg.status }
+                }
+                return m
+              })
+              return { ...p, items }
+            })
+            if (updated) {
+              return { ...prev, pages: pagesMerged }
+            }
             const nextPages = [...prev.pages]
             if (nextPages.length === 0) {
               nextPages.push({ items: [newMsg], members: [], nextCursor: null })
@@ -250,18 +361,27 @@ export default function MessagesPage() {
                     <div key={m.id} className={cn("flex", mine ? "justify-end" : "justify-start")}>
                       <div
                         className={cn(
-                          "px-3 py-2 rounded-lg max-w-lg text-sm",
-                          mine ? "bg-accent text-accent-foreground" : "bg-muted text-foreground"
-                        )}
-                      >
-                        <div className="whitespace-pre-wrap">{m.body}</div>
-                        <div className="text-[11px] opacity-80 mt-1">
-                          {new Date(m.created_at).toLocaleTimeString()}
-                        </div>
-                      </div>
+                      "px-3 py-2 rounded-lg max-w-lg text-sm",
+                      mine ? "bg-accent text-accent-foreground" : "bg-muted text-foreground"
+                    )}
+                  >
+                    <div className="whitespace-pre-wrap">{m.body}</div>
+                    <div className="text-[11px] opacity-80 mt-1 flex items-center gap-2">
+                      <span>{new Date(m.created_at).toLocaleTimeString()}</span>
+                      {m.sendStatus === "sending" ? <span>Invio...</span> : null}
+                      {m.sendStatus === "failed" ? (
+                        <button
+                          className="text-destructive underline underline-offset-2"
+                          onClick={() => handleRetry(m)}
+                        >
+                          Ritenta
+                        </button>
+                      ) : null}
                     </div>
-                  )
-                })}
+                  </div>
+                </div>
+              )
+            })}
               </>
             )}
           </div>
@@ -273,7 +393,11 @@ export default function MessagesPage() {
               onChange={(e) => setComposer(e.target.value)}
               rows={2}
             />
-            <Button onClick={() => sendMutation.mutate()} disabled={!canSend || sendMutation.isPending} className="shrink-0">
+            <Button
+              onClick={() => sendMutation.mutate({ body: composer.trim() })}
+              disabled={!canSend || sendMutation.isPending}
+              className="shrink-0"
+            >
               <Send className="w-4 h-4 mr-2" />
               Invia
             </Button>
