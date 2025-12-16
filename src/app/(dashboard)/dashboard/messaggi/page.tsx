@@ -35,6 +35,7 @@ export default function MessagesPage() {
   const [actionTarget, setActionTarget] = useState<MessageItem | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const scrollPositionsRef = useRef<Record<string, number>>({})
+  const initialScrollRef = useRef<Record<string, boolean>>({})
   const filterPrefetchRef = useRef<Record<string, boolean>>({})
   const prevCountRef = useRef(0)
   const ignoreNextNewBadgeRef = useRef(false) // evita badge quando stiamo solo pre-pendendo vecchi messaggi
@@ -344,13 +345,24 @@ export default function MessagesPage() {
     const total = messagesQuery.data.pages.reduce((sum, p) => sum + p.items.length, 0)
     const container = scrollRef.current
 
+    const key = `${selectedChat ?? "global"}-${filter}`
+    const alreadyScrolled = initialScrollRef.current[key]
+
+    if (!alreadyScrolled) {
+      scrollToBottom()
+      initialScrollRef.current[key] = true
+      setIsAtBottom(true)
+      prevCountRef.current = total
+      return
+    }
+
     if (isAtBottom) {
       scrollToBottom()
     } else if (total > prevCountRef.current && container) {
       setHasNewMessages(true)
     }
     prevCountRef.current = total
-  }, [messagesQuery.data, isAtBottom])
+  }, [messagesQuery.data, isAtBottom, filter, selectedChat])
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -550,6 +562,17 @@ export default function MessagesPage() {
       })
     }
   }, [filter, messagesQuery, selectedChat])
+
+  // reset contatori e scroll-state quando cambi chat
+  useEffect(() => {
+    const base = `${selectedChat ?? "global"}`
+    initialScrollRef.current[`${base}-all`] = false
+    initialScrollRef.current[`${base}-important`] = false
+    initialScrollRef.current[`${base}-idea`] = false
+    prevCountRef.current = 0
+    setHasNewMessages(false)
+    setIsAtBottom(true)
+  }, [selectedChat])
 
   return (
     <div className="space-y-6">
