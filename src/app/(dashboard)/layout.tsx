@@ -2,6 +2,8 @@ import type React from "react"
 import { redirect } from "next/navigation"
 import { DashboardSidebar } from "@/src/components/dashboard/sidebar"
 import { DashboardTopbar } from "@/src/components/dashboard/topbar"
+import { ServiceWorkerRegister } from "@/src/components/ServiceWorkerRegister"
+import { PushResync } from "@/src/components/push/PushResync"
 import { createSupabaseServerClient } from "../../lib/supabase/server"
 import { Providers } from "./providers"
 
@@ -17,6 +19,8 @@ export default async function DashboardLayout({
 
   return (
     <Providers>
+      <ServiceWorkerRegister />
+      <PushResync />
       <div className="min-h-screen bg-muted/30">
         <DashboardSidebar />
         <div className="lg:pl-64">
