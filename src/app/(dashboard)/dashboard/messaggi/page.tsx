@@ -288,8 +288,14 @@ export default function MessagesPage() {
   useEffect(() => {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return
 
+    const buildMessage = (chatId: string | null) => ({
+      type: chatId ? "chat-state" : "chat-inactive",
+      chatId,
+      visible: typeof document !== "undefined" ? document.visibilityState === "visible" : true,
+    })
+
     const postChatState = (chatId: string | null) => {
-      const message = { type: "chat-active", chatId }
+      const message = buildMessage(chatId)
 
       if (navigator.serviceWorker.controller) {
         navigator.serviceWorker.controller.postMessage(message)
@@ -299,9 +305,15 @@ export default function MessagesPage() {
       navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage(message)).catch(() => {})
     }
 
+    const handleVisibility = () => {
+      postChatState(selectedChat ?? null)
+    }
+
     postChatState(selectedChat ?? null)
+    document.addEventListener("visibilitychange", handleVisibility)
 
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibility)
       postChatState(null)
     }
   }, [selectedChat])

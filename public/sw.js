@@ -1,4 +1,4 @@
-const CACHE = "2it-app-v3" // <-- bump versione per forzare refresh
+const CACHE = "2it-app-v4" // <-- bump versione per forzare refresh
 const APP_SHELL = "/dashboard"
 const activeChatsByClient = new Map()
 
@@ -62,11 +62,13 @@ self.addEventListener("message", (event) => {
   const sourceId = event.source && "id" in event.source ? event.source.id : null
 
   if (!data || typeof data !== "object" || !sourceId) return
-  if (data.type !== "chat-active" && data.type !== "chat-inactive") return
+  if (data.type !== "chat-state" && data.type !== "chat-inactive") return
 
   const chatId = data.chatId
-  if (data.type === "chat-active" && chatId) {
-    activeChatsByClient.set(sourceId, String(chatId))
+  const visible = data.visible === true
+
+  if (data.type === "chat-state" && chatId) {
+    activeChatsByClient.set(sourceId, { chatId: String(chatId), visible })
   } else {
     activeChatsByClient.delete(sourceId)
   }
@@ -101,9 +103,15 @@ self.addEventListener("push", (event) => {
     })
 
     const isChatOpen = clients.some((c) => {
-      const isVisible = "visibilityState" in c ? c.visibilityState === "visible" : true
       const activeChat = activeChatsByClient.get(c.id)
-      if (activeChat && activeChat === chatId && isVisible) return true
+      const isVisible =
+        activeChat?.visible === true
+          ? true
+          : "visibilityState" in c
+            ? c.visibilityState === "visible"
+            : true
+
+      if (activeChat?.chatId === chatId && isVisible) return true
 
       try {
         const current = new URL(c.url)
