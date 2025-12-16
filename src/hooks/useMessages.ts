@@ -10,6 +10,7 @@ export type MessageItem = {
   status: string
   created_at: string
   sendStatus?: "sending" | "failed" | "sent"
+  tag?: "important" | "idea" | null
 }
 
 export type MessagesResponse = {

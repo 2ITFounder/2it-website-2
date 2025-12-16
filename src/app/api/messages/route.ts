@@ -19,6 +19,15 @@ const MessageQuerySchema = z.object({
   before: z.string().optional(),
 })
 
+const MessageUpdateSchema = z.object({
+  id: z.string().uuid(),
+  tag: z.enum(["important", "idea", "none"]),
+})
+
+const MessageDeleteSchema = z.object({
+  id: z.string().uuid(),
+})
+
 async function ensureChatMembership(supabase: ReturnType<typeof createSupabaseServiceClient>, chatId: string, userId: string) {
   const { data, error } = await supabase.from("chat_members").select("user_id").eq("chat_id", chatId)
   if (error) throw new Error(error.message)
@@ -54,7 +63,7 @@ export async function GET(req: Request) {
     const limit = parsed.data.limit ?? 50
     let query = supabase
       .from("messages")
-      .select("id, chat_id, sender_id, body, status, created_at")
+      .select("id, chat_id, sender_id, body, status, created_at, tag")
       .eq("chat_id", parsed.data.chat_id)
       .order("created_at", { ascending: false })
       .limit(limit)
@@ -148,8 +157,9 @@ export async function POST(req: Request) {
         sender_id: auth.user.id,
         body: parsed.data.body,
         status: "sent",
+        tag: null,
       })
-      .select("id, chat_id, sender_id, body, status, created_at")
+      .select("id, chat_id, sender_id, body, status, created_at, tag")
       .single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -173,5 +183,75 @@ export async function POST(req: Request) {
   } catch (e: any) {
     const status = e?.status ?? 500
     return NextResponse.json({ error: e?.message ?? "Errore invio messaggio" }, { status })
+  }
+}
+
+export async function PATCH(req: Request) {
+  const supabaseAuth = await createSupabaseRouteClient()
+  const { data: auth } = await supabaseAuth.auth.getUser()
+  if (!auth?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+  const body = await req.json().catch(() => null)
+  const parsed = MessageUpdateSchema.safeParse(body)
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
+
+  const supabase = createSupabaseServiceClient()
+
+  try {
+    const { data: messageRow, error: fetchErr } = await supabase
+      .from("messages")
+      .select("id, chat_id")
+      .eq("id", parsed.data.id)
+      .maybeSingle()
+    if (fetchErr) throw fetchErr
+    if (!messageRow) return NextResponse.json({ error: "Messaggio non trovato" }, { status: 404 })
+
+    await ensureChatMembership(supabase, messageRow.chat_id, auth.user.id)
+
+    const nextTag = parsed.data.tag === "none" ? null : parsed.data.tag
+    const { data, error } = await supabase
+      .from("messages")
+      .update({ tag: nextTag })
+      .eq("id", parsed.data.id)
+      .select("id, chat_id, sender_id, body, status, created_at, tag")
+      .single()
+    if (error) throw error
+
+    return NextResponse.json({ data })
+  } catch (e: any) {
+    const status = e?.status ?? 500
+    return NextResponse.json({ error: e?.message ?? "Errore aggiornamento messaggio" }, { status })
+  }
+}
+
+export async function DELETE(req: Request) {
+  const supabaseAuth = await createSupabaseRouteClient()
+  const { data: auth } = await supabaseAuth.auth.getUser()
+  if (!auth?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+  const body = await req.json().catch(() => null)
+  const parsed = MessageDeleteSchema.safeParse(body)
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
+
+  const supabase = createSupabaseServiceClient()
+
+  try {
+    const { data: messageRow, error: fetchErr } = await supabase
+      .from("messages")
+      .select("id, chat_id")
+      .eq("id", parsed.data.id)
+      .maybeSingle()
+    if (fetchErr) throw fetchErr
+    if (!messageRow) return NextResponse.json({ error: "Messaggio non trovato" }, { status: 404 })
+
+    await ensureChatMembership(supabase, messageRow.chat_id, auth.user.id)
+
+    const { error } = await supabase.from("messages").delete().eq("id", parsed.data.id)
+    if (error) throw error
+
+    return NextResponse.json({ deleted: parsed.data.id })
+  } catch (e: any) {
+    const status = e?.status ?? 500
+    return NextResponse.json({ error: e?.message ?? "Errore eliminazione messaggio" }, { status })
   }
 }

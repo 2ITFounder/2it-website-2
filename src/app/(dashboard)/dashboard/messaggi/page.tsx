@@ -34,9 +34,12 @@ export default function MessagesPage() {
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [hasNewMessages, setHasNewMessages] = useState(false)
   const [isNewChatMode, setIsNewChatMode] = useState(false)
+  const [filter, setFilter] = useState<"all" | "important" | "idea">("all")
+  const [actionTarget, setActionTarget] = useState<MessageItem | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const prevCountRef = useRef(0)
   const ignoreNextNewBadgeRef = useRef(false) // evita badge quando stiamo solo pre-pendendo vecchi messaggi
+  const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const chatsQuery = useChats(true)
   const usersQuery = useChatUsers()
@@ -232,6 +235,50 @@ export default function MessagesPage() {
     sendMutation.mutate({ body: msg.body })
   }
 
+  const updateMessageTag = async (msg: MessageItem, tag: "important" | "idea") => {
+    if (!msg?.id) return
+    try {
+      const res = await fetch("/api/messages", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: msg.id, tag }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error ?? "Errore aggiornamento")
+      const updated = json?.data as MessageItem
+      mergeMessageIntoCache(msg.chat_id, normalizeIncoming(updated))
+      qc.invalidateQueries({ queryKey: ["messages", msg.chat_id] })
+      qc.invalidateQueries({ queryKey: ["notifications"] })
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setActionTarget(null)
+    }
+  }
+
+  const deleteMessage = async (msg: MessageItem) => {
+    if (!msg?.id) return
+    const confirmed = typeof window !== "undefined" ? window.confirm("Eliminare questo messaggio?") : true
+    if (!confirmed) return
+    try {
+      const res = await fetch("/api/messages", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: msg.id }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error ?? "Errore eliminazione")
+      removeMessageFromCache(msg.chat_id, msg.id)
+      qc.invalidateQueries({ queryKey: ["messages", msg.chat_id] })
+      qc.invalidateQueries({ queryKey: ["chats"] })
+      qc.invalidateQueries({ queryKey: ["notifications"] })
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setActionTarget(null)
+    }
+  }
+
   useEffect(() => {
     if (selectedChat) {
       void markChatNotificationsRead(selectedChat)
@@ -351,6 +398,18 @@ export default function MessagesPage() {
     })
   }
 
+  const removeMessageFromCache = (chatId: string, messageId: string) => {
+    qc.setQueryData<MessagesData>(["messages", chatId], (prev) => {
+      if (!prev) return prev
+      const nextPages = prev.pages.map((p, idx) => {
+        if (idx !== 0) return p
+        const filtered = p.items.filter((m) => m.id !== messageId)
+        return { ...p, items: filtered }
+      })
+      return { ...prev, pages: nextPages }
+    })
+  }
+
   useEffect(() => {
     if (!selectedChat) return
 
@@ -370,6 +429,25 @@ export default function MessagesPage() {
           void markChatNotificationsRead(selectedChat)
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages", filter: `chat_id=eq.${selectedChat}` },
+        (payload) => {
+          const updated = normalizeIncoming(payload.new as any as MessageItem)
+          mergeMessageIntoCache(selectedChat, updated)
+          qc.invalidateQueries({ queryKey: ["messages", selectedChat] })
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "messages", filter: `chat_id=eq.${selectedChat}` },
+        (payload) => {
+          const deletedId = (payload.old as any)?.id
+          if (deletedId) removeMessageFromCache(selectedChat, deletedId)
+          qc.invalidateQueries({ queryKey: ["messages", selectedChat] })
+          qc.invalidateQueries({ queryKey: ["chats"] })
+        }
+      )
       .subscribe()
 
     return () => {
@@ -380,6 +458,12 @@ export default function MessagesPage() {
   const allMessages: MessageItem[] = (messagesQuery.data?.pages ?? [])
     .flatMap((p: MessagesResponse) => p.items)
     .sort(sortByCreatedAt)
+
+  const filteredMessages = useMemo(() => {
+    if (filter === "important") return allMessages.filter((m) => m.tag === "important")
+    if (filter === "idea") return allMessages.filter((m) => m.tag === "idea")
+    return allMessages
+  }, [allMessages, filter])
 
   return (
     <div className="space-y-6">
@@ -447,6 +531,22 @@ export default function MessagesPage() {
                 ) : !selectedChat ? null : null}
               </div>
             </div>
+            <div className="flex items-center gap-2">
+              {[
+                { label: "Tutti", value: "all" },
+                { label: "Importanti", value: "important" },
+                { label: "Idee", value: "idea" },
+              ].map((f) => (
+                <Button
+                  key={f.value}
+                  variant={filter === f.value ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setFilter(f.value as typeof filter)}
+                >
+                  {f.label}
+                </Button>
+              ))}
+            </div>
           </div>
 
           {isNewChatMode ? (
@@ -479,9 +579,16 @@ export default function MessagesPage() {
           ) : null}
 
           <div className="relative flex-1 overflow-y-auto p-4 space-y-3" ref={scrollRef} onScroll={handleScroll}>
+            {actionTarget ? (
+              <div
+                className="absolute inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
+                onClick={() => setActionTarget(null)}
+              />
+            ) : null}
+
             {!selectedChat && !isNewChatMode ? null : messagesQuery.isLoading ? (
               <div className="text-sm text-muted-foreground">Caricamento messaggi...</div>
-            ) : allMessages.length === 0 ? (
+            ) : filteredMessages.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 {recipient ? `Scrivi il primo messaggio a ${recipientLabel || "un utente"}.` : "Nessun messaggio"}
               </div>
@@ -500,19 +607,73 @@ export default function MessagesPage() {
                   </div>
                 ) : null}
 
-                {allMessages.map((m) => {
+                {filteredMessages.map((m) => {
                   const mine = m.sender_id === currentUserId
+                  const isActive = actionTarget?.id === m.id
+                  const dimmed = Boolean(actionTarget && !isActive)
+                  const tagClass =
+                    m.tag === "important"
+                      ? "border border-red-200 bg-red-50 text-red-900"
+                      : m.tag === "idea"
+                        ? "border border-emerald-200 bg-emerald-50 text-emerald-900"
+                        : mine
+                          ? "bg-accent text-accent-foreground"
+                          : "bg-muted text-foreground"
+
                   return (
-                    <div key={m.id} className={cn("flex", mine ? "justify-end" : "justify-start")}>
+                    <div
+                      key={m.id}
+                      className={cn(
+                        "relative flex",
+                        mine ? "justify-end" : "justify-start",
+                        dimmed ? "opacity-40 blur-[1px] pointer-events-none" : "",
+                        isActive ? "z-50" : "z-10"
+                      )}
+                      onClick={() => setActionTarget(m)}
+                      onPointerDown={(e) => {
+                        if (e.button !== 0) return
+                        if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
+                        holdTimeoutRef.current = setTimeout(() => setActionTarget(m), 350)
+                      }}
+                      onPointerUp={() => {
+                        if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
+                      }}
+                      onPointerCancel={() => {
+                        if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
+                      }}
+                      onPointerLeave={() => {
+                        if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current)
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        setActionTarget(m)
+                      }}
+                    >
+                      {isActive ? (
+                        <div className="absolute z-50 -top-12 right-0 flex gap-2 bg-background border rounded-lg shadow-lg px-3 py-2">
+                          <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "important")}>
+                            Importante
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "idea")}>
+                            Idea
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => deleteMessage(m)}>
+                            Elimina
+                          </Button>
+                        </div>
+                      ) : null}
+
                       <div
                         className={cn(
-                          "px-3 py-2 rounded-lg max-w-lg text-sm",
-                          mine ? "bg-accent text-accent-foreground" : "bg-muted text-foreground"
+                          "px-3 py-2 rounded-lg max-w-lg text-sm border",
+                          tagClass,
+                          isActive ? "ring-2 ring-offset-2 ring-accent" : ""
                         )}
                       >
                         <div className="whitespace-pre-wrap">{m.body}</div>
                         <div className="text-[11px] opacity-80 mt-1 flex items-center gap-2">
                           <span>{new Date(m.created_at).toLocaleTimeString()}</span>
+                          {m.tag ? <span className="uppercase font-semibold">{m.tag}</span> : null}
                           {m.sendStatus === "sending" ? <span>Invio...</span> : null}
                           {m.sendStatus === "failed" ? (
                             <button className="text-destructive underline underline-offset-2" onClick={() => handleRetry(m)}>
