@@ -65,13 +65,45 @@ self.addEventListener("push", (event) => {
   const body = data.body || ""
   const url = data.url || "/dashboard"
 
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      data: { url },
+  const chatId = data.chatId || (() => {
+    try {
+      const u = new URL(url, self.location.origin)
+      return u.searchParams.get("chatId")
+    } catch {
+      return null
+    }
+  })()
+
+  const shouldShowNotification = async () => {
+    if (!chatId || data.type !== "message") return true
+
+    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
+    const isChatOpen = clients.some((c) => {
+      try {
+        const current = new URL(c.url)
+        const openChatId = current.searchParams.get("chatId")
+        const isMessagesPage = current.pathname.startsWith("/dashboard/messaggi")
+        const isVisible = "visibilityState" in c ? c.visibilityState === "visible" : true
+        return isMessagesPage && openChatId === chatId && isVisible
+      } catch {
+        return false
+      }
     })
+
+    return !isChatOpen
+  }
+
+  event.waitUntil(
+    (async () => {
+      const show = await shouldShowNotification()
+      if (!show) return
+      return self.registration.showNotification(title, {
+        body,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        data: { url },
+      })
+    })()
   )
 })
 

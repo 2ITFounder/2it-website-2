@@ -7,6 +7,7 @@ type PushPayload = {
   body: string
   url?: string
   type?: string
+  chatId?: string
 }
 
 let isConfigured = false

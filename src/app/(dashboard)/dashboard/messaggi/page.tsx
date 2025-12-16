@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { MessageSquare, Send } from "lucide-react"
+import { MessageSquare, Plus, Send } from "lucide-react"
 import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { Button } from "@/src/components/ui/button"
@@ -33,8 +33,10 @@ export default function MessagesPage() {
   const [composer, setComposer] = useState("")
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [hasNewMessages, setHasNewMessages] = useState(false)
+  const [isNewChatMode, setIsNewChatMode] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const prevCountRef = useRef(0)
+  const ignoreNextNewBadgeRef = useRef(false) // evita badge quando stiamo solo pre-pendendo vecchi messaggi
 
   const chatsQuery = useChats(true)
   const usersQuery = useChatUsers()
@@ -89,11 +91,10 @@ export default function MessagesPage() {
           pageParams: [null],
         }
         if (!prev) return base
-
         const pages = [...prev.pages]
-        const lastIndex = pages.length - 1
-        const updatedItems = [...pages[lastIndex].items, optimisticMsg].sort(sortByCreatedAt)
-        pages[lastIndex] = { ...pages[lastIndex], items: updatedItems }
+        const firstIndex = 0
+        const updatedItems = [...pages[firstIndex].items, optimisticMsg].sort(sortByCreatedAt)
+        pages[firstIndex] = { ...pages[firstIndex], items: updatedItems }
 
         return { ...prev, pages }
       })
@@ -159,18 +160,20 @@ export default function MessagesPage() {
         const cached = qc.getQueryData<MessagesData>(["messages", fromKey])
 
         if (cached) {
-          const mergedPages = cached.pages.map((p) => ({
-            ...p,
-            items: p.items.map((m): MessageItem => {
+          const mergedPages = cached.pages.map((p, idx) => {
+            if (idx !== 0) return p
+            const updatedItems = p.items.map((m): MessageItem => {
               const isTarget = m.id === context?.tempId || m.tempId === context?.tempId
               return isTarget ? { ...m, ...message, id: message.id, tempId: undefined, sendStatus: "sent" } : m
-            }),
-          }))
+            })
+            return { ...p, items: [...updatedItems].sort(sortByCreatedAt) }
+          })
 
           qc.setQueryData<MessagesData>(["messages", message.chat_id], { ...cached, pages: mergedPages })
         }
 
         setSelectedChat(message.chat_id)
+        setIsNewChatMode(false)
         router.replace(`/dashboard/messaggi?chatId=${message.chat_id}`)
       }
 
@@ -187,10 +190,40 @@ export default function MessagesPage() {
     return others.join(", ")
   }, [selected, currentUserId])
 
+  const recipientLabel = useMemo(() => {
+    const match = users.find((u) => u.user_id === recipient)
+    if (!match) return ""
+    return match.username || `${match.first_name ?? ""} ${match.last_name ?? ""}`.trim() || match.email || "Nuova chat"
+  }, [recipient, users])
+
+  const headerTitle = selectedChat ? conversationTitle || "Chat" : isNewChatMode ? "Nuova chat" : "Seleziona una chat"
+
+  const startNewChat = () => {
+    setSelectedChat(null)
+    setRecipient("")
+    setComposer("")
+    setIsNewChatMode(true)
+    router.replace("/dashboard/messaggi")
+  }
+
   const handleSelectChat = (id: string) => {
     setSelectedChat(id)
     setRecipient("")
+    setIsNewChatMode(false)
     router.replace(`/dashboard/messaggi?chatId=${id}`)
+  }
+
+  const markChatNotificationsRead = async (chatId: string) => {
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId }),
+      })
+      qc.invalidateQueries({ queryKey: ["notifications"] })
+    } catch {
+      // silenzia errori: non blocca l'UX della chat
+    }
   }
 
   const handleRetry = (msg: MessageItem) => {
@@ -198,6 +231,12 @@ export default function MessagesPage() {
     setComposer(msg.body)
     sendMutation.mutate({ body: msg.body })
   }
+
+  useEffect(() => {
+    if (selectedChat) {
+      void markChatNotificationsRead(selectedChat)
+    }
+  }, [selectedChat])
 
   const canSend = composer.trim().length > 0 && (selectedChat || recipient)
 
@@ -210,6 +249,12 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (!messagesQuery.data) return
+    if (ignoreNextNewBadgeRef.current) {
+      // reset dopo fetch di pagine precedenti
+      ignoreNextNewBadgeRef.current = false
+      prevCountRef.current = messagesQuery.data.pages.reduce((sum, p) => sum + p.items.length, 0)
+      return
+    }
     const total = messagesQuery.data.pages.reduce((sum, p) => sum + p.items.length, 0)
     const container = scrollRef.current
 
@@ -236,6 +281,7 @@ export default function MessagesPage() {
     ) {
       const prevHeight = container.scrollHeight
       const prevTop = container.scrollTop
+      ignoreNextNewBadgeRef.current = true
       void messagesQuery.fetchNextPage().then(() => {
         const el = scrollRef.current
         if (!el) return
@@ -257,7 +303,7 @@ export default function MessagesPage() {
 
       let updated = false
 
-      const pages = prev.pages.map((p) => {
+      const pages = prev.pages.map((p, idx) => {
         const items = p.items.map((m): MessageItem => {
           const sameById = m.id === normalized.id
           const sameByTemp =
@@ -283,6 +329,9 @@ export default function MessagesPage() {
           return m
         })
 
+        if (idx === 0) {
+          return { ...p, items: items.sort(sortByCreatedAt) }
+        }
         return { ...p, items }
       })
 
@@ -294,9 +343,9 @@ export default function MessagesPage() {
       }
 
       const nextPages = [...pages]
-      const lastIndex = nextPages.length - 1
-      const mergedItems = [...nextPages[lastIndex].items, normalized].sort(sortByCreatedAt)
-      nextPages[lastIndex] = { ...nextPages[lastIndex], items: mergedItems }
+      const firstIndex = 0
+      const mergedItems = [...nextPages[firstIndex].items, normalized].sort(sortByCreatedAt)
+      nextPages[firstIndex] = { ...nextPages[firstIndex], items: mergedItems }
 
       return { ...prev, pages: nextPages }
     })
@@ -318,6 +367,7 @@ export default function MessagesPage() {
           qc.invalidateQueries({ queryKey: ["messages", selectedChat] })
           // refresh sidebar ordering/last message
           qc.invalidateQueries({ queryKey: ["chats"] })
+          void markChatNotificationsRead(selectedChat)
         }
       )
       .subscribe()
@@ -327,7 +377,9 @@ export default function MessagesPage() {
     }
   }, [qc, selectedChat])
 
-  const allMessages: MessageItem[] = (messagesQuery.data?.pages ?? []).flatMap((p: MessagesResponse) => p.items)
+  const allMessages: MessageItem[] = (messagesQuery.data?.pages ?? [])
+    .flatMap((p: MessagesResponse) => p.items)
+    .sort(sortByCreatedAt)
 
   return (
     <div className="space-y-6">
@@ -336,22 +388,16 @@ export default function MessagesPage() {
           <h1 className="text-2xl font-bold">Messaggi</h1>
           <p className="text-muted-foreground">Chat interne tra admin</p>
         </div>
+        <Button size="sm" className="gap-2" onClick={startNewChat}>
+          <Plus className="w-4 h-4" />
+          Nuova chat
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <GlassCard className="p-0">
           <div className="px-4 py-3 border-b flex items-center justify-between">
             <div className="font-semibold">Chat</div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setSelectedChat(null)
-                setRecipient("")
-              }}
-            >
-              Nuova chat
-            </Button>
           </div>
 
           <div className="max-h-[70vh] overflow-y-auto divide-y">
@@ -390,13 +436,20 @@ export default function MessagesPage() {
 
         <GlassCard className="lg:col-span-2 p-0 flex flex-col h-[70vh]">
           <div className="px-4 py-3 border-b flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <MessageSquare className="w-4 h-4" />
-              <div className="font-semibold">{conversationTitle || "Nuova chat"}</div>
+              <div>
+                <div className="font-semibold">{headerTitle}</div>
+                {isNewChatMode ? (
+                  <div className="text-xs text-muted-foreground">
+                    Scegli il destinatario e invia il primo messaggio.
+                  </div>
+                ) : !selectedChat ? null : null}
+              </div>
             </div>
           </div>
 
-          {!selectedChat ? (
+          {isNewChatMode ? (
             <div className="p-4 border-b space-y-3">
               <div className="text-sm text-muted-foreground">Seleziona il destinatario</div>
               <div className="rounded-lg border bg-background">
@@ -426,10 +479,12 @@ export default function MessagesPage() {
           ) : null}
 
           <div className="relative flex-1 overflow-y-auto p-4 space-y-3" ref={scrollRef} onScroll={handleScroll}>
-            {messagesQuery.isLoading ? (
+            {!selectedChat && !isNewChatMode ? null : messagesQuery.isLoading ? (
               <div className="text-sm text-muted-foreground">Caricamento messaggi...</div>
             ) : allMessages.length === 0 ? (
-              <div className="text-sm text-muted-foreground">Nessun messaggio</div>
+              <div className="text-sm text-muted-foreground">
+                {recipient ? `Scrivi il primo messaggio a ${recipientLabel || "un utente"}.` : "Nessun messaggio"}
+              </div>
             ) : (
               <>
                 {messagesQuery.hasNextPage ? (

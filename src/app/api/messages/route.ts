@@ -15,7 +15,8 @@ const MessagePostSchema = z.object({
 const MessageQuerySchema = z.object({
   chat_id: z.string().uuid(),
   limit: z.coerce.number().min(1).max(200).optional(),
-  before: z.string().datetime().optional(),
+  // Postgres timestamp può avere microsecondi: evitare valida rigidissima ISO
+  before: z.string().optional(),
 })
 
 async function ensureChatMembership(supabase: ReturnType<typeof createSupabaseServiceClient>, chatId: string, userId: string) {
@@ -164,6 +165,7 @@ export async function POST(req: Request) {
         body: parsed.data.body.slice(0, 140),
         url: `/dashboard/messaggi?chatId=${chatId}`,
         type: "message",
+        chatId,
       })
     }
 

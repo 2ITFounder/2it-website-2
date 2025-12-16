@@ -5,6 +5,7 @@ import { createSupabaseRouteClient } from "@/src/lib/supabase/route"
 const MarkReadSchema = z.union([
   z.object({ ids: z.array(z.string().uuid()).min(1) }),
   z.object({ all: z.literal(true) }),
+  z.object({ chatId: z.string().uuid() }),
 ])
 
 const MAX_LIMIT = 50
@@ -52,8 +53,11 @@ export async function PATCH(req: Request) {
   const payload = parsed.data
 
   let query = supabase.from("notifications").update({ is_read: true }).eq("user_id", auth.user.id)
-  if (!("all" in payload)) {
+
+  if ("ids" in payload) {
     query = query.in("id", payload.ids)
+  } else if ("chatId" in payload) {
+    query = query.eq("link", `/dashboard/messaggi?chatId=${payload.chatId}`)
   }
 
   const { data, error } = await query.select("id")
