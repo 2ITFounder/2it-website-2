@@ -624,7 +624,7 @@ export default function MessagesPage() {
           <div className="relative flex-1 overflow-y-auto p-4 space-y-3" ref={scrollRef} onScroll={handleScroll}>
             {actionTarget ? (
               <div
-                className="absolute inset-0 z-50 bg-black/30 backdrop-blur-[1px]"
+                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] pointer-events-auto"
                 onClick={() => setActionTarget(null)}
                 role="presentation"
               />
@@ -681,6 +681,11 @@ export default function MessagesPage() {
                           <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "idea")}>
                             Idea
                           </Button>
+                          {m.tag ? (
+                            <Button size="sm" variant="ghost" onClick={() => updateMessageTag(m, "none" as any)}>
+                              Normale
+                            </Button>
+                          ) : null}
                           <Button size="sm" variant="destructive" onClick={() => deleteMessage(m)}>
                             Elimina
                           </Button>
