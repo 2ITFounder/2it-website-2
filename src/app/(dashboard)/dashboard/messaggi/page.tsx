@@ -21,6 +21,7 @@ import { apiGet } from "@/src/lib/api"
 type MessagesData = InfiniteData<MessagesResponse, string | null>
 
 const PRESENCE_HEARTBEAT_MS = 15_000
+const NEAR_BOTTOM_PX = 80
 const IS_DEV = process.env.NODE_ENV !== "production"
 
 export default function MessagesPage() {
@@ -371,6 +372,7 @@ export default function MessagesPage() {
     } else {
       bottomRef.current?.scrollIntoView({ behavior, block: "end" })
     }
+    setIsAtBottom(true)
     setHasNewMessages(false)
   }
 
@@ -427,7 +429,7 @@ export default function MessagesPage() {
     // salva posizione corrente per il filtro attivo (per chat)
     const key = `${selectedChat ?? "global"}-${filter}`
     scrollPositionsRef.current[key] = container.scrollTop
-    const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80
+    const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= NEAR_BOTTOM_PX
     setIsAtBottom(nearBottom)
 
     const nearTop = container.scrollTop < 120
