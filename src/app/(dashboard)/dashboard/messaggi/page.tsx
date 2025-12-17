@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useRef, useLayoutEffect } from "react"
+import { useEffect, useMemo, useState, useRef, useLayoutEffect, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { MessageSquare, Plus, Send } from "lucide-react"
 import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query"
@@ -14,7 +14,7 @@ import { cn } from "@/src/lib/utils"
 import { createSupabaseBrowserClient } from "@/src/lib/supabase/client"
 import { normalizeIncoming, sortByCreatedAt } from "./lib/message-helpers"
 import { ChatListItem } from "./components/ChatListItem"
-import { MessageItemBubble } from "./components/MessageItemBubble"
+import { MessageRow } from "./components/MessageRow"
 import { apiDeleteMessage, apiMarkChatNotificationsRead, apiUpdateMessageTag } from "./lib/message-actions"
 import { apiGet } from "@/src/lib/api"
 
@@ -61,9 +61,9 @@ export default function MessagesPage() {
   const users = usersQuery.data ?? []
 
   const selected = useMemo(() => chats.find((c) => c.id === selectedChat) ?? null, [chats, selectedChat])
-  const logDebug = (...args: any[]) => {
+  const logDebug = useCallback((...args: any[]) => {
     if (IS_DEV) console.debug(...args)
-  }
+  }, [])
 
   // Prefetch la prima chat disponibile per eliminare il primo loading
   useEffect(() => {
@@ -262,7 +262,7 @@ export default function MessagesPage() {
     router.replace(`/dashboard/messaggi?chatId=${id}`)
   }
 
-  const markChatNotificationsRead = async (chatId: string) => {
+  const markChatNotificationsRead = useCallback(async (chatId: string) => {
     try {
       await apiMarkChatNotificationsRead(chatId)
       qc.invalidateQueries({ queryKey: ["notifications"] })
@@ -270,23 +270,26 @@ export default function MessagesPage() {
     } catch {
       // silenzia errori: non blocca l'UX della chat
     }
-  }
+  }, [qc])
 
-  const buildTempId = () => `temp-${crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)}`
+  const buildTempId = useCallback(
+    () => `temp-${crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)}`,
+    []
+  )
 
-  const triggerSend = (body: string) => {
+  const triggerSend = useCallback((body: string) => {
     const trimmed = body.trim()
     if (!trimmed) return
     sendMutation.mutate({ body: trimmed, tempId: buildTempId() })
-  }
+  }, [buildTempId, sendMutation])
 
-  const handleRetry = (msg: MessageItem) => {
+  const handleRetry = useCallback((msg: MessageItem) => {
     if (!msg?.body) return
     setComposer(msg.body)
     triggerSend(msg.body)
-  }
+  }, [triggerSend])
 
-  const updateMessageTag = async (msg: MessageItem, tag: "important" | "idea") => {
+  const updateMessageTag = useCallback(async (msg: MessageItem, tag: "important" | "idea") => {
     if (!msg?.id) return
     try {
       const updated = await apiUpdateMessageTag(msg, tag)
@@ -298,9 +301,9 @@ export default function MessagesPage() {
     } finally {
       setActionTarget(null)
     }
-  }
+  }, [mergeMessageIntoCache, qc])
 
-  const deleteMessage = async (msg: MessageItem) => {
+  const deleteMessage = useCallback(async (msg: MessageItem) => {
     if (!msg?.id) return
     const confirmed = typeof window !== "undefined" ? window.confirm("Eliminare questo messaggio?") : true
     if (!confirmed) return
@@ -315,7 +318,11 @@ export default function MessagesPage() {
     } finally {
       setActionTarget(null)
     }
-  }
+  }, [qc, removeMessageFromCache])
+
+  const handleOpenActions = useCallback((msg: MessageItem) => {
+    setActionTarget(msg)
+  }, [])
 
   useEffect(() => {
     if (selectedChat) {
@@ -392,6 +399,18 @@ export default function MessagesPage() {
     setHasNewMessages(false)
   }
 
+  const ensureBottom = (behavior: ScrollBehavior = "auto") => {
+    scrollToBottom(behavior)
+    requestAnimationFrame(() => {
+      const container = scrollRef.current
+      if (!container) return
+      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= NEAR_BOTTOM_PX
+      if (!nearBottom) {
+        scrollToBottom("auto")
+      }
+    })
+  }
+
   useLayoutEffect(() => {
     if (!messagesQuery.data) return
     const key = `${selectedChat ?? "global"}-${filter}`
@@ -400,7 +419,7 @@ export default function MessagesPage() {
     const firstItem = messagesQuery.data.pages[0]?.items[0]
     if (selectedChat && firstItem?.chat_id && firstItem.chat_id !== selectedChat) return
 
-    scrollToBottom("auto")
+    ensureBottom("auto")
     initialScrollRef.current[key] = true
     setIsAtBottom(true)
     setHasNewMessages(false)
@@ -422,7 +441,7 @@ export default function MessagesPage() {
     const container = scrollRef.current
 
     if (isAtBottom) {
-      scrollToBottom("auto")
+      ensureBottom("auto")
     } else if (total > prevCountRef.current && container) {
       setHasNewMessages(true)
     }
@@ -468,6 +487,7 @@ export default function MessagesPage() {
     scrollPositionsRef.current[key] = container.scrollTop
     const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= NEAR_BOTTOM_PX
     setIsAtBottom(nearBottom)
+    if (nearBottom) setHasNewMessages(false)
 
     const nearTop = container.scrollTop < 120
     if (
@@ -488,7 +508,7 @@ export default function MessagesPage() {
     }
   }
 
-  const dedupeMessages = (items: MessageItem[]) => {
+  const dedupeMessages = useCallback((items: MessageItem[]) => {
     const byKey = new Map<string, MessageItem>()
     for (const msg of items) {
       const key = msg.tempId ?? msg.client_temp_id ?? msg.id
@@ -508,9 +528,10 @@ export default function MessagesPage() {
       byKey.set(key, { ...prev, ...msg, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
     }
     return Array.from(byKey.values())
-  }
+  }, [])
 
-  const mergeMessageIntoCache = (chatId: string, incoming: MessageItem, source: "realtime" | "refetch" = "realtime") => {
+  const mergeMessageIntoCache = useCallback(
+    (chatId: string, incoming: MessageItem, source: "realtime" | "refetch" = "realtime") => {
     const normalized = normalizeIncoming(incoming)
     lastLocalUpdateRef.current = source === "realtime" ? "realtime" : lastLocalUpdateRef.current
     if (source === "realtime") {
@@ -582,9 +603,9 @@ export default function MessagesPage() {
     if (IS_DEV && source === "realtime") {
       logDebug("[msg][realtime] mergeAction", { chatId, id: normalized.id, action: mergeAction })
     }
-  }
+  }, [dedupeMessages, logDebug, qc])
 
-  const removeMessageFromCache = (chatId: string, messageId: string) => {
+  const removeMessageFromCache = useCallback((chatId: string, messageId: string) => {
     qc.setQueryData<MessagesData>(["messages", chatId], (prev) => {
       if (!prev) return prev
       const nextPages = prev.pages.map((p, idx) => {
@@ -594,7 +615,7 @@ export default function MessagesPage() {
       })
       return { ...prev, pages: nextPages }
     })
-  }
+  }, [qc])
 
   useEffect(() => {
     if (!selectedChat) return
@@ -676,12 +697,12 @@ export default function MessagesPage() {
       channelRef.current = null
       channelIdRef.current = null
     }
-  }, [qc, selectedChat])
+  }, [logDebug, markChatNotificationsRead, mergeMessageIntoCache, qc, removeMessageFromCache, selectedChat, supabase])
 
   const allMessages: MessageItem[] = useMemo(() => {
     const items = (messagesQuery.data?.pages ?? []).flatMap((p: MessagesResponse) => p.items)
     return dedupeMessages(items).sort(sortByCreatedAt)
-  }, [messagesQuery.data])
+  }, [dedupeMessages, messagesQuery.data])
 
   const filteredMessages = useMemo(() => {
     if (filter === "important") return allMessages.filter((m) => m.tag === "important")
@@ -866,18 +887,29 @@ export default function MessagesPage() {
 
                 {filteredMessages.map((m) => {
                   const mine = m.sender_id === currentUserId
-                  const isActive = actionTarget?.id === m.id
+                  const actionKey = actionTarget?.client_temp_id ?? actionTarget?.tempId ?? actionTarget?.id ?? null
+                  const messageKey = m.client_temp_id ?? m.tempId ?? m.id
+                  const isActive = Boolean(actionKey && messageKey === actionKey)
                   const dimmed = Boolean(actionTarget && !isActive)
 
                   return (
-                    <MessageItemBubble
-                      key={m.id}
-                      message={m}
+                    <MessageRow
+                      key={messageKey}
+                      id={m.id}
+                      clientTempId={m.client_temp_id ?? null}
+                      tempId={m.tempId}
+                      chatId={m.chat_id}
+                      senderId={m.sender_id}
+                      body={m.body}
+                      createdAt={m.created_at}
+                      status={m.status}
+                      sendStatus={m.sendStatus}
+                      tag={m.tag ?? null}
                       isMine={mine}
                       isActive={isActive}
                       dimmed={dimmed}
-                      onOpenActions={setActionTarget}
-                      onUpdateTag={updateMessageTag as any}
+                      onOpenActions={handleOpenActions}
+                      onUpdateTag={updateMessageTag}
                       onDelete={deleteMessage}
                       onRetry={handleRetry}
                     />
@@ -886,7 +918,7 @@ export default function MessagesPage() {
 
                 {hasNewMessages && !isAtBottom ? (
                   <div className="sticky bottom-2 flex justify-center">
-                    <Button size="sm" variant="secondary" onClick={() => scrollToBottom("smooth")}>
+                    <Button size="sm" variant="secondary" onClick={() => ensureBottom("smooth")}>
                       Nuovi messaggi
                     </Button>
                   </div>
