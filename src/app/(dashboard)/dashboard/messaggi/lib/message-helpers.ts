@@ -5,5 +5,9 @@ export function sortByCreatedAt(a: MessageItem, b: MessageItem) {
 }
 
 export function normalizeIncoming(incoming: MessageItem): MessageItem {
-  return { ...incoming, sendStatus: incoming.sendStatus ?? "sent" }
+  return {
+    ...incoming,
+    tempId: incoming.tempId ?? incoming.client_temp_id ?? undefined,
+    sendStatus: incoming.sendStatus ?? "sent",
+  }
 }

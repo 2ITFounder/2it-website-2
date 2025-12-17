@@ -4,6 +4,7 @@ import { apiGet } from "@/src/lib/api"
 export type MessageItem = {
   id: string
   tempId?: string
+  client_temp_id?: string | null
   chat_id: string
   sender_id: string
   body: string

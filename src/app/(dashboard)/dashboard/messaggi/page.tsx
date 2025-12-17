@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useRef } from "react"
+import { useEffect, useMemo, useState, useRef, useLayoutEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { MessageSquare, Plus, Send } from "lucide-react"
 import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query"
@@ -37,6 +37,7 @@ export default function MessagesPage() {
   const [filter, setFilter] = useState<"all" | "important" | "idea">("all")
   const [actionTarget, setActionTarget] = useState<MessageItem | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const bottomRef = useRef<HTMLDivElement | null>(null)
   const scrollPositionsRef = useRef<Record<string, number>>({})
   const initialScrollRef = useRef<Record<string, boolean>>({})
   const filterPrefetchRef = useRef<Record<string, boolean>>({})
@@ -80,8 +81,8 @@ export default function MessagesPage() {
   }, [qc])
 
   const sendMutation = useMutation({
-    mutationFn: async (variables: { body: string }) => {
-      const payload: Record<string, any> = { body: variables.body }
+    mutationFn: async (variables: { body: string; tempId: string }) => {
+      const payload: Record<string, any> = { body: variables.body, client_temp_id: variables.tempId }
       if (selectedChat) payload.chat_id = selectedChat
       else payload.receiver_id = recipient
 
@@ -98,12 +99,12 @@ export default function MessagesPage() {
     onMutate: async (variables) => {
       if (!variables.body.trim()) return
 
-      const tempId = `temp-${crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)}`
       const chatIdForCache = selectedChat ?? undefined
 
       const optimisticMsg: MessageItem = {
-        id: tempId,
-        tempId,
+        id: variables.tempId,
+        tempId: variables.tempId,
+        client_temp_id: variables.tempId,
         chat_id: selectedChat ?? "pending",
         sender_id: currentUserId ?? "me",
         body: variables.body,
@@ -129,7 +130,7 @@ export default function MessagesPage() {
       })
 
       setComposer("")
-      return { tempId, chatIdForCache }
+      return { tempId: variables.tempId, chatIdForCache }
     },
 
     onError: (_error, _variables, context) => {
@@ -153,6 +154,7 @@ export default function MessagesPage() {
     onSuccess: (message, _vars, context) => {
       if (!message) return
 
+      const normalizedMessage = normalizeIncoming(message)
       const targetKey = selectedChat ?? context?.chatIdForCache ?? undefined
 
       // reconcile optimistic message
@@ -164,20 +166,20 @@ export default function MessagesPage() {
             if (m.id === context?.tempId || m.tempId === context?.tempId) {
               return {
                 ...m,
-                ...message,
-                id: message.id,
+                ...normalizedMessage,
+                id: normalizedMessage.id,
                 tempId: undefined,
-                status: message.status ?? "sent",
+                status: normalizedMessage.status ?? "sent",
                 sendStatus: "sent",
               }
             }
             return m
           })
 
-          const exists = items.some((m) => m.id === message.id)
+          const exists = items.some((m) => m.id === normalizedMessage.id)
           return exists
             ? { ...p, items: items.sort(sortByCreatedAt) }
-            : { ...p, items: [...items, message].sort(sortByCreatedAt) }
+            : { ...p, items: [...items, normalizedMessage].sort(sortByCreatedAt) }
         })
 
         return { ...prev, pages }
@@ -193,7 +195,9 @@ export default function MessagesPage() {
             if (idx !== 0) return p
             const updatedItems = p.items.map((m): MessageItem => {
               const isTarget = m.id === context?.tempId || m.tempId === context?.tempId
-              return isTarget ? { ...m, ...message, id: message.id, tempId: undefined, sendStatus: "sent" } : m
+              return isTarget
+                ? { ...m, ...normalizedMessage, id: normalizedMessage.id, tempId: undefined, sendStatus: "sent" }
+                : m
             })
             return { ...p, items: [...updatedItems].sort(sortByCreatedAt) }
           })
@@ -207,7 +211,6 @@ export default function MessagesPage() {
       }
 
       qc.invalidateQueries({ queryKey: ["chats"] })
-      qc.invalidateQueries({ queryKey: ["messages", selectedChat ?? message?.chat_id] })
     },
   })
 
@@ -252,10 +255,18 @@ export default function MessagesPage() {
     }
   }
 
+  const buildTempId = () => `temp-${crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)}`
+
+  const triggerSend = (body: string) => {
+    const trimmed = body.trim()
+    if (!trimmed) return
+    sendMutation.mutate({ body: trimmed, tempId: buildTempId() })
+  }
+
   const handleRetry = (msg: MessageItem) => {
     if (!msg?.body) return
     setComposer(msg.body)
-    sendMutation.mutate({ body: msg.body })
+    triggerSend(msg.body)
   }
 
   const updateMessageTag = async (msg: MessageItem, tag: "important" | "idea") => {
@@ -352,15 +363,37 @@ export default function MessagesPage() {
 
   const canSend = composer.trim().length > 0 && (selectedChat || recipient)
 
-  const scrollToBottom = () => {
+  const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
     const container = scrollRef.current
     if (!container) return
-    container.scrollTop = container.scrollHeight
+    if (behavior === "auto") {
+      container.scrollTop = container.scrollHeight
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior, block: "end" })
+    }
     setHasNewMessages(false)
   }
 
+  useLayoutEffect(() => {
+    if (!messagesQuery.data) return
+    const key = `${selectedChat ?? "global"}-${filter}`
+    const alreadyScrolled = initialScrollRef.current[key]
+    if (alreadyScrolled) return
+    const firstItem = messagesQuery.data.pages[0]?.items[0]
+    if (selectedChat && firstItem?.chat_id && firstItem.chat_id !== selectedChat) return
+
+    scrollToBottom("auto")
+    initialScrollRef.current[key] = true
+    setIsAtBottom(true)
+    setHasNewMessages(false)
+    prevCountRef.current = messagesQuery.data.pages.reduce((sum, p) => sum + p.items.length, 0)
+  }, [messagesQuery.data, filter, selectedChat])
+
   useEffect(() => {
     if (!messagesQuery.data) return
+    const key = `${selectedChat ?? "global"}-${filter}`
+    if (!initialScrollRef.current[key]) return
+
     if (ignoreNextNewBadgeRef.current) {
       // reset dopo fetch di pagine precedenti
       ignoreNextNewBadgeRef.current = false
@@ -370,19 +403,8 @@ export default function MessagesPage() {
     const total = messagesQuery.data.pages.reduce((sum, p) => sum + p.items.length, 0)
     const container = scrollRef.current
 
-    const key = `${selectedChat ?? "global"}-${filter}`
-    const alreadyScrolled = initialScrollRef.current[key]
-
-    if (!alreadyScrolled) {
-      scrollToBottom()
-      initialScrollRef.current[key] = true
-      setIsAtBottom(true)
-      prevCountRef.current = total
-      return
-    }
-
     if (isAtBottom) {
-      scrollToBottom()
+      scrollToBottom("auto")
     } else if (total > prevCountRef.current && container) {
       setHasNewMessages(true)
     }
@@ -427,6 +449,28 @@ export default function MessagesPage() {
     }
   }
 
+  const dedupeMessages = (items: MessageItem[]) => {
+    const byKey = new Map<string, MessageItem>()
+    for (const msg of items) {
+      const key = msg.tempId ?? msg.client_temp_id ?? msg.id
+      const prev = byKey.get(key)
+      if (!prev) {
+        byKey.set(key, msg)
+        continue
+      }
+      if (prev.sendStatus === "sending" && msg.sendStatus !== "sending") {
+        byKey.set(key, { ...prev, ...msg, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
+        continue
+      }
+      if (msg.sendStatus === "sending" && prev.sendStatus !== "sending") {
+        byKey.set(key, { ...msg, ...prev, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
+        continue
+      }
+      byKey.set(key, { ...prev, ...msg, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
+    }
+    return Array.from(byKey.values())
+  }
+
   const mergeMessageIntoCache = (chatId: string, incoming: MessageItem) => {
     const normalized = normalizeIncoming(incoming)
 
@@ -449,7 +493,8 @@ export default function MessagesPage() {
             Boolean(m.tempId) &&
             !normalized.tempId &&
             normalized.body === m.body &&
-            normalized.sender_id === m.sender_id
+            (normalized.sender_id === m.sender_id || m.sender_id === "me") &&
+            normalized.chat_id === m.chat_id
 
           if (sameById || sameByTemp || sameHeuristic) {
             updated = true
@@ -465,10 +510,11 @@ export default function MessagesPage() {
           return m
         })
 
+        const deduped = dedupeMessages(items).sort(sortByCreatedAt)
         if (idx === 0) {
-          return { ...p, items: items.sort(sortByCreatedAt) }
+          return { ...p, items: deduped }
         }
-        return { ...p, items }
+        return { ...p, items: deduped }
       })
 
       if (updated) {
@@ -480,7 +526,7 @@ export default function MessagesPage() {
 
       const nextPages = [...pages]
       const firstIndex = 0
-      const mergedItems = [...nextPages[firstIndex].items, normalized].sort(sortByCreatedAt)
+      const mergedItems = dedupeMessages([...nextPages[firstIndex].items, normalized]).sort(sortByCreatedAt)
       nextPages[firstIndex] = { ...nextPages[firstIndex], items: mergedItems }
 
       return { ...prev, pages: nextPages }
@@ -511,8 +557,6 @@ export default function MessagesPage() {
         (payload) => {
           const newMsg = normalizeIncoming(payload.new as any as MessageItem)
           mergeMessageIntoCache(selectedChat, newMsg)
-          // fallback refetch in caso di desync della cache
-          qc.invalidateQueries({ queryKey: ["messages", selectedChat] })
           // refresh sidebar ordering/last message
           qc.invalidateQueries({ queryKey: ["chats"] })
           void markChatNotificationsRead(selectedChat)
@@ -524,7 +568,6 @@ export default function MessagesPage() {
         (payload) => {
           const updated = normalizeIncoming(payload.new as any as MessageItem)
           mergeMessageIntoCache(selectedChat, updated)
-          qc.invalidateQueries({ queryKey: ["messages", selectedChat] })
         }
       )
       .on(
@@ -533,7 +576,6 @@ export default function MessagesPage() {
         (payload) => {
           const deletedId = (payload.old as any)?.id
           if (deletedId) removeMessageFromCache(selectedChat, deletedId)
-          qc.invalidateQueries({ queryKey: ["messages", selectedChat] })
           qc.invalidateQueries({ queryKey: ["chats"] })
         }
       )
@@ -751,11 +793,12 @@ export default function MessagesPage() {
 
                 {hasNewMessages && !isAtBottom ? (
                   <div className="sticky bottom-2 flex justify-center">
-                    <Button size="sm" variant="secondary" onClick={scrollToBottom}>
+                    <Button size="sm" variant="secondary" onClick={() => scrollToBottom("smooth")}>
                       Nuovi messaggi
                     </Button>
                   </div>
                 ) : null}
+                <div ref={bottomRef} />
               </>
             )}
           </div>
@@ -763,7 +806,7 @@ export default function MessagesPage() {
           <div className="border-t p-3 flex items-center gap-2">
             <Textarea placeholder="Scrivi un messaggio..." value={composer} onChange={(e) => setComposer(e.target.value)} rows={2} />
             <Button
-              onClick={() => sendMutation.mutate({ body: composer.trim() })}
+              onClick={() => triggerSend(composer)}
               disabled={!canSend || sendMutation.isPending}
               className="shrink-0"
             >

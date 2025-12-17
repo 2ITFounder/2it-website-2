@@ -11,6 +11,7 @@ const MessagePostSchema = z.object({
   chat_id: z.string().uuid().optional(),
   receiver_id: z.string().uuid().optional(),
   body: z.string().min(1, "Messaggio vuoto").max(5000),
+  client_temp_id: z.string().min(4).max(128).optional(),
 })
 
 const MessageQuerySchema = z.object({
@@ -52,7 +53,7 @@ export async function GET(req: Request) {
     const limit = parsed.data.limit ?? 50
     let query = supabase
       .from("messages")
-      .select("id, chat_id, sender_id, body, status, created_at, tag")
+      .select("id, chat_id, sender_id, body, status, created_at, tag, client_temp_id")
       .eq("chat_id", parsed.data.chat_id)
       .order("created_at", { ascending: false })
       .limit(limit)
@@ -147,8 +148,9 @@ export async function POST(req: Request) {
         body: parsed.data.body,
         status: "sent",
         tag: null,
+        client_temp_id: parsed.data.client_temp_id ?? null,
       })
-      .select("id, chat_id, sender_id, body, status, created_at, tag")
+      .select("id, chat_id, sender_id, body, status, created_at, tag, client_temp_id")
       .single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -202,7 +204,7 @@ export async function PATCH(req: Request) {
       .from("messages")
       .update({ tag: nextTag })
       .eq("id", parsed.data.id)
-      .select("id, chat_id, sender_id, body, status, created_at, tag")
+      .select("id, chat_id, sender_id, body, status, created_at, tag, client_temp_id")
       .single()
     if (error) throw error
 
