@@ -25,9 +25,6 @@ const NEAR_BOTTOM_PX = 80
 const IS_DEV = process.env.NODE_ENV !== "production"
 
 export default function MessagesPage() {
-  if (!supabaseRef.current) {
-    supabaseRef.current = createSupabaseBrowserClient()
-  }
   const params = useSearchParams()
   const router = useRouter()
   const initialChat = params.get("chatId")
@@ -42,10 +39,10 @@ export default function MessagesPage() {
   const [actionTarget, setActionTarget] = useState<MessageItem | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
-  const supabaseRef = useRef<ReturnType<typeof createSupabaseBrowserClient> | null>(null)
   const channelRef = useRef<any | null>(null)
   const channelIdRef = useRef<string | null>(null)
   const lastLocalUpdateRef = useRef<"optimistic" | "realtime" | "onSuccess" | null>(null)
+  const supabase = useMemo(() => createSupabaseBrowserClient(), [])
   const scrollPositionsRef = useRef<Record<string, number>>({})
   const initialScrollRef = useRef<Record<string, boolean>>({})
   const filterPrefetchRef = useRef<Record<string, boolean>>({})
@@ -602,7 +599,6 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!selectedChat) return
 
-    const supabase = supabaseRef.current
     if (!supabase) return
     if (channelRef.current) {
       logDebug("[RT][messages] cleanup existing channel before subscribe", { chatId: selectedChat })
