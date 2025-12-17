@@ -25,6 +25,9 @@ const NEAR_BOTTOM_PX = 80
 const IS_DEV = process.env.NODE_ENV !== "production"
 
 export default function MessagesPage() {
+  if (!supabaseRef.current) {
+    supabaseRef.current = createSupabaseBrowserClient()
+  }
   const params = useSearchParams()
   const router = useRouter()
   const initialChat = params.get("chatId")
@@ -39,6 +42,10 @@ export default function MessagesPage() {
   const [actionTarget, setActionTarget] = useState<MessageItem | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const supabaseRef = useRef<ReturnType<typeof createSupabaseBrowserClient> | null>(null)
+  const channelRef = useRef<any | null>(null)
+  const channelIdRef = useRef<string | null>(null)
+  const lastLocalUpdateRef = useRef<"optimistic" | "realtime" | "onSuccess" | null>(null)
   const scrollPositionsRef = useRef<Record<string, number>>({})
   const initialScrollRef = useRef<Record<string, boolean>>({})
   const filterPrefetchRef = useRef<Record<string, boolean>>({})
@@ -57,6 +64,9 @@ export default function MessagesPage() {
   const users = usersQuery.data ?? []
 
   const selected = useMemo(() => chats.find((c) => c.id === selectedChat) ?? null, [chats, selectedChat])
+  const logDebug = (...args: any[]) => {
+    if (IS_DEV) console.debug(...args)
+  }
 
   // Prefetch la prima chat disponibile per eliminare il primo loading
   useEffect(() => {
@@ -101,6 +111,8 @@ export default function MessagesPage() {
       if (!variables.body.trim()) return
 
       const chatIdForCache = selectedChat ?? undefined
+      lastLocalUpdateRef.current = "optimistic"
+      logDebug("[msg][optimistic] add", { chatId: chatIdForCache, tempId: variables.tempId })
 
       const optimisticMsg: MessageItem = {
         id: variables.tempId,
@@ -157,6 +169,13 @@ export default function MessagesPage() {
 
       const normalizedMessage = normalizeIncoming(message)
       const targetKey = selectedChat ?? context?.chatIdForCache ?? undefined
+      lastLocalUpdateRef.current = "onSuccess"
+      logDebug("[msg][onSuccess] reconcile", {
+        chatId: normalizedMessage.chat_id,
+        id: normalizedMessage.id,
+        client_temp_id: normalizedMessage.client_temp_id ?? null,
+        tempId: context?.tempId ?? null,
+      })
 
       // reconcile optimistic message
       qc.setQueryData<MessagesData>(["messages", targetKey], (prev) => {
@@ -414,6 +433,27 @@ export default function MessagesPage() {
   }, [messagesQuery.data, isAtBottom, filter, selectedChat])
 
   useEffect(() => {
+    if (!messagesQuery.data) return
+    const total = messagesQuery.data.pages.reduce((sum, p) => sum + p.items.length, 0)
+    const source = lastLocalUpdateRef.current ?? (messagesQuery.isFetching ? "refetch" : "unknown")
+    if (IS_DEV) {
+      logDebug("[msg][data] update", { chatId: selectedChat, source, total })
+      const dupes = new Map<string, number>()
+      for (const page of messagesQuery.data.pages) {
+        for (const msg of page.items) {
+          const key = msg.tempId ?? msg.client_temp_id ?? msg.id
+          dupes.set(key, (dupes.get(key) ?? 0) + 1)
+        }
+      }
+      const duplicates = Array.from(dupes.entries()).filter(([, count]) => count > 1)
+      if (duplicates.length > 0) {
+        logDebug("[msg][dupes] detected", { chatId: selectedChat, duplicates })
+      }
+    }
+    lastLocalUpdateRef.current = null
+  }, [messagesQuery.data, messagesQuery.isFetching, selectedChat])
+
+  useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") setActionTarget(null)
     }
@@ -473,15 +513,28 @@ export default function MessagesPage() {
     return Array.from(byKey.values())
   }
 
-  const mergeMessageIntoCache = (chatId: string, incoming: MessageItem) => {
+  const mergeMessageIntoCache = (chatId: string, incoming: MessageItem, source: "realtime" | "refetch" = "realtime") => {
     const normalized = normalizeIncoming(incoming)
+    lastLocalUpdateRef.current = source === "realtime" ? "realtime" : lastLocalUpdateRef.current
+    if (source === "realtime") {
+      logDebug("[msg][realtime] merge", {
+        chatId,
+        id: normalized.id,
+        client_temp_id: normalized.client_temp_id ?? null,
+        tempId: normalized.tempId ?? null,
+      })
+    }
 
+    let mergeAction: "reconcile" | "append" | "noop" = "noop"
     qc.setQueryData<MessagesData>(["messages", chatId], (prev) => {
       const base: MessagesData = {
         pages: [{ items: [normalized], members: [], nextCursor: null }],
         pageParams: [null],
       }
-      if (!prev) return base
+      if (!prev) {
+        mergeAction = "append"
+        return base
+      }
 
       let updated = false
 
@@ -491,14 +544,8 @@ export default function MessagesPage() {
           const sameByTemp =
             Boolean(normalized.tempId) &&
             (m.tempId === normalized.tempId || (!m.id && m.tempId && m.tempId === normalized.tempId))
-          const sameHeuristic =
-            Boolean(m.tempId) &&
-            !normalized.tempId &&
-            normalized.body === m.body &&
-            (normalized.sender_id === m.sender_id || m.sender_id === "me") &&
-            normalized.chat_id === m.chat_id
 
-          if (sameById || sameByTemp || sameHeuristic) {
+          if (sameById || sameByTemp) {
             updated = true
             return {
               ...m,
@@ -520,6 +567,7 @@ export default function MessagesPage() {
       })
 
       if (updated) {
+        mergeAction = "reconcile"
         return {
           ...prev,
           pages: pages.map((p) => ({ ...p, items: [...p.items].sort(sortByCreatedAt) })),
@@ -530,9 +578,13 @@ export default function MessagesPage() {
       const firstIndex = 0
       const mergedItems = dedupeMessages([...nextPages[firstIndex].items, normalized]).sort(sortByCreatedAt)
       nextPages[firstIndex] = { ...nextPages[firstIndex], items: mergedItems }
+      mergeAction = "append"
 
       return { ...prev, pages: nextPages }
     })
+    if (IS_DEV && source === "realtime") {
+      logDebug("[msg][realtime] mergeAction", { chatId, id: normalized.id, action: mergeAction })
+    }
   }
 
   const removeMessageFromCache = (chatId: string, messageId: string) => {
@@ -550,13 +602,33 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!selectedChat) return
 
-    const supabase = createSupabaseBrowserClient()
+    const supabase = supabaseRef.current
+    if (!supabase) return
+    if (channelRef.current) {
+      logDebug("[RT][messages] cleanup existing channel before subscribe", { chatId: selectedChat })
+      channelRef.current.unsubscribe()
+      supabase.removeChannel(channelRef.current)
+      channelRef.current = null
+      channelIdRef.current = null
+    }
+
+    const channelId = `messages-${selectedChat}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    channelIdRef.current = channelId
+    logDebug("[RT][messages] subscribe", { chatId: selectedChat, channelId })
+
     const channel = supabase
       .channel(`messages-${selectedChat}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${selectedChat}` },
         (payload) => {
+          const msg = payload.new as any
+          logDebug("[RT][messages] insert", {
+            chatId: selectedChat,
+            channelId,
+            id: msg?.id,
+            client_temp_id: msg?.client_temp_id ?? null,
+          })
           const newMsg = normalizeIncoming(payload.new as any as MessageItem)
           mergeMessageIntoCache(selectedChat, newMsg)
           // refresh sidebar ordering/last message
@@ -568,6 +640,13 @@ export default function MessagesPage() {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "messages", filter: `chat_id=eq.${selectedChat}` },
         (payload) => {
+          const msg = payload.new as any
+          logDebug("[RT][messages] update", {
+            chatId: selectedChat,
+            channelId,
+            id: msg?.id,
+            client_temp_id: msg?.client_temp_id ?? null,
+          })
           const updated = normalizeIncoming(payload.new as any as MessageItem)
           mergeMessageIntoCache(selectedChat, updated)
         }
@@ -576,15 +655,30 @@ export default function MessagesPage() {
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "messages", filter: `chat_id=eq.${selectedChat}` },
         (payload) => {
+          const msg = payload.old as any
+          logDebug("[RT][messages] delete", {
+            chatId: selectedChat,
+            channelId,
+            id: msg?.id,
+            client_temp_id: msg?.client_temp_id ?? null,
+          })
           const deletedId = (payload.old as any)?.id
           if (deletedId) removeMessageFromCache(selectedChat, deletedId)
           qc.invalidateQueries({ queryKey: ["chats"] })
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        logDebug("[RT][messages] status", { chatId: selectedChat, channelId, status })
+      })
+
+    channelRef.current = channel
 
     return () => {
+      logDebug("[RT][messages] unsubscribe", { chatId: selectedChat, channelId })
+      channel.unsubscribe()
       supabase.removeChannel(channel)
+      channelRef.current = null
+      channelIdRef.current = null
     }
   }, [qc, selectedChat])
 
