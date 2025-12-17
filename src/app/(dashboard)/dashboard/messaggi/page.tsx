@@ -582,18 +582,20 @@ export default function MessagesPage() {
     })
   }, [qc])
 
-  const updateMessageTag = useCallback(async (msg: MessageItem, tag: "important" | "idea") => {
+  const updateMessageTag = useCallback((msg: MessageItem, tag: "important" | "idea" | "none") => {
     if (!msg?.id) return
-    try {
-      const updated = await apiUpdateMessageTag(msg, tag)
-      mergeMessageIntoCache(msg.chat_id, normalizeIncoming(updated))
-      qc.invalidateQueries({ queryKey: ["messages", msg.chat_id] })
-      qc.invalidateQueries({ queryKey: ["notifications"] })
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setActionTarget(null)
-    }
+    void (async () => {
+      try {
+        const updated = await apiUpdateMessageTag(msg, tag)
+        mergeMessageIntoCache(msg.chat_id, normalizeIncoming(updated))
+        qc.invalidateQueries({ queryKey: ["messages", msg.chat_id] })
+        qc.invalidateQueries({ queryKey: ["notifications"] })
+      } catch (e) {
+        console.error(e)
+      } finally {
+        setActionTarget(null)
+      }
+    })()
   }, [mergeMessageIntoCache, qc])
 
   const deleteMessage = useCallback(async (msg: MessageItem) => {
