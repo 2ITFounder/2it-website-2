@@ -24,6 +24,28 @@ const PRESENCE_HEARTBEAT_MS = 15_000
 const NEAR_BOTTOM_PX = 80
 const IS_DEV = process.env.NODE_ENV !== "production"
 
+function dedupeMessages(items: MessageItem[]) {
+  const byKey = new Map<string, MessageItem>()
+  for (const msg of items) {
+    const key = msg.tempId ?? msg.client_temp_id ?? msg.id
+    const prev = byKey.get(key)
+    if (!prev) {
+      byKey.set(key, msg)
+      continue
+    }
+    if (prev.sendStatus === "sending" && msg.sendStatus !== "sending") {
+      byKey.set(key, { ...prev, ...msg, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
+      continue
+    }
+    if (msg.sendStatus === "sending" && prev.sendStatus !== "sending") {
+      byKey.set(key, { ...msg, ...prev, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
+      continue
+    }
+    byKey.set(key, { ...prev, ...msg, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
+  }
+  return Array.from(byKey.values())
+}
+
 export default function MessagesPage() {
   const params = useSearchParams()
   const router = useRouter()
@@ -289,41 +311,6 @@ export default function MessagesPage() {
     triggerSend(msg.body)
   }, [triggerSend])
 
-  const updateMessageTag = useCallback(async (msg: MessageItem, tag: "important" | "idea") => {
-    if (!msg?.id) return
-    try {
-      const updated = await apiUpdateMessageTag(msg, tag)
-      mergeMessageIntoCache(msg.chat_id, normalizeIncoming(updated))
-      qc.invalidateQueries({ queryKey: ["messages", msg.chat_id] })
-      qc.invalidateQueries({ queryKey: ["notifications"] })
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setActionTarget(null)
-    }
-  }, [mergeMessageIntoCache, qc])
-
-  const deleteMessage = useCallback(async (msg: MessageItem) => {
-    if (!msg?.id) return
-    const confirmed = typeof window !== "undefined" ? window.confirm("Eliminare questo messaggio?") : true
-    if (!confirmed) return
-    try {
-      await apiDeleteMessage(msg)
-      removeMessageFromCache(msg.chat_id, msg.id)
-      qc.invalidateQueries({ queryKey: ["messages", msg.chat_id] })
-      qc.invalidateQueries({ queryKey: ["chats"] })
-      qc.invalidateQueries({ queryKey: ["notifications"] })
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setActionTarget(null)
-    }
-  }, [qc, removeMessageFromCache])
-
-  const handleOpenActions = useCallback((msg: MessageItem) => {
-    setActionTarget(msg)
-  }, [])
-
   useEffect(() => {
     if (selectedChat) {
       void markChatNotificationsRead(selectedChat)
@@ -508,28 +495,6 @@ export default function MessagesPage() {
     }
   }
 
-  const dedupeMessages = useCallback((items: MessageItem[]) => {
-    const byKey = new Map<string, MessageItem>()
-    for (const msg of items) {
-      const key = msg.tempId ?? msg.client_temp_id ?? msg.id
-      const prev = byKey.get(key)
-      if (!prev) {
-        byKey.set(key, msg)
-        continue
-      }
-      if (prev.sendStatus === "sending" && msg.sendStatus !== "sending") {
-        byKey.set(key, { ...prev, ...msg, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
-        continue
-      }
-      if (msg.sendStatus === "sending" && prev.sendStatus !== "sending") {
-        byKey.set(key, { ...msg, ...prev, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
-        continue
-      }
-      byKey.set(key, { ...prev, ...msg, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
-    }
-    return Array.from(byKey.values())
-  }, [])
-
   const mergeMessageIntoCache = useCallback(
     (chatId: string, incoming: MessageItem, source: "realtime" | "refetch" = "realtime") => {
     const normalized = normalizeIncoming(incoming)
@@ -603,7 +568,7 @@ export default function MessagesPage() {
     if (IS_DEV && source === "realtime") {
       logDebug("[msg][realtime] mergeAction", { chatId, id: normalized.id, action: mergeAction })
     }
-  }, [dedupeMessages, logDebug, qc])
+  }, [logDebug, qc])
 
   const removeMessageFromCache = useCallback((chatId: string, messageId: string) => {
     qc.setQueryData<MessagesData>(["messages", chatId], (prev) => {
@@ -616,6 +581,41 @@ export default function MessagesPage() {
       return { ...prev, pages: nextPages }
     })
   }, [qc])
+
+  const updateMessageTag = useCallback(async (msg: MessageItem, tag: "important" | "idea") => {
+    if (!msg?.id) return
+    try {
+      const updated = await apiUpdateMessageTag(msg, tag)
+      mergeMessageIntoCache(msg.chat_id, normalizeIncoming(updated))
+      qc.invalidateQueries({ queryKey: ["messages", msg.chat_id] })
+      qc.invalidateQueries({ queryKey: ["notifications"] })
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setActionTarget(null)
+    }
+  }, [mergeMessageIntoCache, qc])
+
+  const deleteMessage = useCallback(async (msg: MessageItem) => {
+    if (!msg?.id) return
+    const confirmed = typeof window !== "undefined" ? window.confirm("Eliminare questo messaggio?") : true
+    if (!confirmed) return
+    try {
+      await apiDeleteMessage(msg)
+      removeMessageFromCache(msg.chat_id, msg.id)
+      qc.invalidateQueries({ queryKey: ["messages", msg.chat_id] })
+      qc.invalidateQueries({ queryKey: ["chats"] })
+      qc.invalidateQueries({ queryKey: ["notifications"] })
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setActionTarget(null)
+    }
+  }, [qc, removeMessageFromCache])
+
+  const handleOpenActions = useCallback((msg: MessageItem) => {
+    setActionTarget(msg)
+  }, [])
 
   useEffect(() => {
     if (!selectedChat) return
@@ -702,7 +702,7 @@ export default function MessagesPage() {
   const allMessages: MessageItem[] = useMemo(() => {
     const items = (messagesQuery.data?.pages ?? []).flatMap((p: MessagesResponse) => p.items)
     return dedupeMessages(items).sort(sortByCreatedAt)
-  }, [dedupeMessages, messagesQuery.data])
+  }, [messagesQuery.data])
 
   const filteredMessages = useMemo(() => {
     if (filter === "important") return allMessages.filter((m) => m.tag === "important")
