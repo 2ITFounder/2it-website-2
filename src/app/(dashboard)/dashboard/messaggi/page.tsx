@@ -20,6 +20,9 @@ import { apiGet } from "@/src/lib/api"
 
 type MessagesData = InfiniteData<MessagesResponse, string | null>
 
+const PRESENCE_HEARTBEAT_MS = 15_000
+const IS_DEV = process.env.NODE_ENV !== "production"
+
 export default function MessagesPage() {
   const params = useSearchParams()
   const router = useRouter()
@@ -293,35 +296,57 @@ export default function MessagesPage() {
   }, [selectedChat])
 
   useEffect(() => {
-    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return
+    if (!selectedChat) return
+    if (typeof document === "undefined") return
 
-    const buildMessage = (chatId: string | null) => ({
-      type: chatId ? "chat-state" : "chat-inactive",
-      chatId,
-      visible: typeof document !== "undefined" ? document.visibilityState === "visible" : true,
-    })
+    let interval: ReturnType<typeof setInterval> | null = null
 
-    const postChatState = (chatId: string | null) => {
-      const message = buildMessage(chatId)
-
-      if (navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage(message)
-        return
+    const heartbeat = async () => {
+      try {
+        await fetch("/api/chat-presence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId: selectedChat }),
+        })
+      } catch {
+        // ignore heartbeat errors
       }
+    }
 
-      navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage(message)).catch(() => {})
+    const start = () => {
+      if (interval) return
+      if (document.visibilityState !== "visible") return
+      if (IS_DEV) console.info("[presence] start", { chatId: selectedChat })
+      void heartbeat()
+      interval = setInterval(heartbeat, PRESENCE_HEARTBEAT_MS)
+    }
+
+    const stop = (reason: string) => {
+      if (!interval) return
+      clearInterval(interval)
+      interval = null
+      if (IS_DEV) console.info("[presence] stop", { chatId: selectedChat, reason })
     }
 
     const handleVisibility = () => {
-      postChatState(selectedChat ?? null)
+      if (document.visibilityState === "visible") {
+        start()
+      } else {
+        stop("hidden")
+      }
     }
 
-    postChatState(selectedChat ?? null)
+    start()
     document.addEventListener("visibilitychange", handleVisibility)
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility)
-      postChatState(null)
+      stop("cleanup")
+      void fetch("/api/chat-presence", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId: selectedChat }),
+      }).catch(() => {})
     }
   }, [selectedChat])
 

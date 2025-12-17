@@ -39,5 +39,8 @@ export async function POST(req: Request) {
     )
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  if (process.env.NODE_ENV !== "production") {
+    console.info("[push] subscribe ok", { userId: user.id, endpoint })
+  }
   return NextResponse.json({ ok: true })
 }

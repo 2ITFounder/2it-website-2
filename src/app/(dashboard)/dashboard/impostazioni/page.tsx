@@ -31,6 +31,7 @@ const DEFAULT_SETTINGS: SettingsDTO = {
   notifications_push: false,
   notifications_weekly: true,
 }
+const IS_DEV = process.env.NODE_ENV !== "production"
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
@@ -55,10 +56,12 @@ async function subscribePush(forceNew = false): Promise<PushSubscription> {
   if (!("PushManager" in window)) throw new Error("Push non supportato")
 
   const permission = await Notification.requestPermission()
+  if (IS_DEV) console.info("[push] permission", permission)
   if (permission !== "granted") throw new Error("Permesso notifiche negato")
 
   const reg = await ensureServiceWorkerReady()
   const existing = await reg.pushManager.getSubscription()
+  if (IS_DEV) console.info("[push] subscribe", { hasExisting: Boolean(existing), forceNew })
   if (existing && !forceNew) return existing
   if (existing && forceNew) await existing.unsubscribe().catch(() => {})
 
@@ -71,6 +74,7 @@ async function subscribePush(forceNew = false): Promise<PushSubscription> {
 async function unsubscribePush(): Promise<void> {
   const reg = await ensureServiceWorkerReady()
   const sub = await reg.pushManager.getSubscription()
+  if (IS_DEV) console.info("[push] unsubscribe", { hasExisting: Boolean(sub) })
   if (sub) await sub.unsubscribe()
 }
 
@@ -200,6 +204,7 @@ export default function ImpostazioniPage() {
   try {
     if (checked) {
       // 1) subscribe browser (forza rinnovo per evitare sub vecchie non valide)
+      if (IS_DEV) console.info("[push] toggle on")
       const sub = await subscribePush(true)
 
       // 2) salva subscription
@@ -214,6 +219,7 @@ export default function ImpostazioniPage() {
       // SALVA ESPLICITAMENTE push = true
       await saveMutation.mutateAsync(buildPayload({ notifications_push: true }))
     } else {
+      if (IS_DEV) console.info("[push] toggle off")
       // unsubscribe
       const reg = await ensureServiceWorkerReady()
       const sub = await reg.pushManager.getSubscription()

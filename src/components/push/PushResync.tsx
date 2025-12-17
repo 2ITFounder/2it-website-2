@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react"
 
+const IS_DEV = process.env.NODE_ENV !== "production"
+
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
@@ -20,13 +22,15 @@ async function resyncPushSubscription() {
   try {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return
 
-    // non chiediamo permessi qui: solo se già concessi
+    // non chiediamo permessi qui: solo se gia concessi
     if (Notification.permission !== "granted") return
+    if (IS_DEV) console.info("[push] resync permission", Notification.permission)
 
     const settingsRes = await fetch("/api/settings", { method: "GET" })
     const settingsJson = await settingsRes.json().catch(() => null)
     const settings = (settingsJson?.data ?? settingsJson)?.data ?? settingsJson
     const pushEnabled = Boolean(settings?.notifications_push)
+    if (IS_DEV) console.info("[push] resync settings", { pushEnabled, status: settingsRes.status })
     if (!pushEnabled) return
 
     const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY
@@ -34,6 +38,7 @@ async function resyncPushSubscription() {
 
     const reg = await ensureServiceWorkerReady()
     let subscription = await reg.pushManager.getSubscription()
+    if (IS_DEV) console.info("[push] resync subscription", { hasSubscription: Boolean(subscription) })
 
     const subscribeFresh = async () =>
       await reg.pushManager.subscribe({
@@ -56,6 +61,7 @@ async function resyncPushSubscription() {
         const text = await res.text().catch(() => "")
         throw new Error(text || res.statusText)
       }
+      if (IS_DEV) console.info("[push] resync upsert ok")
     }
 
     try {
