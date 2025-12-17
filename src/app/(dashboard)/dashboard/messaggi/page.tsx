@@ -678,9 +678,10 @@ export default function MessagesPage() {
     }
   }, [qc, selectedChat])
 
-  const allMessages: MessageItem[] = (messagesQuery.data?.pages ?? [])
-    .flatMap((p: MessagesResponse) => p.items)
-    .sort(sortByCreatedAt)
+  const allMessages: MessageItem[] = useMemo(() => {
+    const items = (messagesQuery.data?.pages ?? []).flatMap((p: MessagesResponse) => p.items)
+    return dedupeMessages(items).sort(sortByCreatedAt)
+  }, [messagesQuery.data])
 
   const filteredMessages = useMemo(() => {
     if (filter === "important") return allMessages.filter((m) => m.tag === "important")
