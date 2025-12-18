@@ -13,38 +13,14 @@ import { useChatUsers } from "@/src/hooks/useChatUsers"
 import { cn } from "@/src/lib/utils"
 import { createSupabaseBrowserClient } from "@/src/lib/supabase/client"
 import { normalizeIncoming, sortByCreatedAt } from "./lib/message-helpers"
+import { dedupeMessages } from "./lib/messages-dedupe"
+import { IS_DEV, NEAR_BOTTOM_PX, PRESENCE_HEARTBEAT_MS } from "./lib/messages-constants"
 import { ChatListItem } from "./components/ChatListItem"
 import { MessageRow } from "./components/MessageRow"
 import { apiDeleteMessage, apiMarkChatNotificationsRead, apiUpdateMessageTag } from "./lib/message-actions"
 import { apiGet } from "@/src/lib/api"
 
 type MessagesData = InfiniteData<MessagesResponse, string | null>
-
-const PRESENCE_HEARTBEAT_MS = 15_000
-const NEAR_BOTTOM_PX = 80
-const IS_DEV = process.env.NODE_ENV !== "production"
-
-function dedupeMessages(items: MessageItem[]) {
-  const byKey = new Map<string, MessageItem>()
-  for (const msg of items) {
-    const key = msg.tempId ?? msg.client_temp_id ?? msg.id
-    const prev = byKey.get(key)
-    if (!prev) {
-      byKey.set(key, msg)
-      continue
-    }
-    if (prev.sendStatus === "sending" && msg.sendStatus !== "sending") {
-      byKey.set(key, { ...prev, ...msg, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
-      continue
-    }
-    if (msg.sendStatus === "sending" && prev.sendStatus !== "sending") {
-      byKey.set(key, { ...msg, ...prev, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
-      continue
-    }
-    byKey.set(key, { ...prev, ...msg, tempId: prev.tempId ?? msg.tempId, client_temp_id: prev.client_temp_id ?? msg.client_temp_id })
-  }
-  return Array.from(byKey.values())
-}
 
 export default function MessagesPage() {
   const params = useSearchParams()
