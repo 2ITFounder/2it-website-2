@@ -1,19 +1,47 @@
 import { NextResponse } from "next/server"
 import { createSupabaseRouteClient } from "@/src/lib/supabase/route"
 
-type RouteContext = {
-  params: { id: string }
-}
-
-export async function PATCH(_req: Request, ctx: RouteContext) {
+export async function PATCH(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
   const supabase = await createSupabaseRouteClient()
   const { data: auth } = await supabase.auth.getUser()
-  if (!auth?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!auth?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
 
-  const cycleId = ctx.params?.id
-  if (!cycleId) return NextResponse.json({ error: "Missing id" }, { status: 400 })
+  // Next ti garantisce params: { id: string } se la route è corretta.
+  // Ma teniamo fallback in caso di runtime strani.
+  let cycleId: string = params.id
 
-  const { data, error } = await supabase.rpc("pay_expense_cycle", { p_cycle_id: cycleId }).single()
+  // fallback: query param
+  if (!cycleId) {
+    cycleId = new URL(req.url).searchParams.get("id") ?? ""
+  }
+
+  // fallback: path (/api/expense-cycles/<id>/pay)
+  if (!cycleId) {
+    const parts = new URL(req.url).pathname.split("/").filter(Boolean)
+    const idx = parts.lastIndexOf("expense-cycles")
+    if (idx >= 0 && parts[idx + 1]) cycleId = parts[idx + 1]
+  }
+
+  // fallback: body
+  if (!cycleId) {
+    try {
+      const body = (await req.json()) as { id?: string }
+      if (body?.id) cycleId = body.id
+    } catch {}
+  }
+
+  if (!cycleId) {
+    return NextResponse.json({ error: "Missing id" }, { status: 400 })
+  }
+
+  const { data, error } = await supabase
+    .rpc("pay_expense_cycle", { p_cycle_id: cycleId })
+    .single()
 
   if (error) {
     const msg = error.message || "Errore pagamento ciclo"
