@@ -47,7 +47,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const supabase = await createSupabaseRouteClient()
+  const supabase = createSupabaseServiceClient()
 
   const body = await req.json().catch(() => null)
   const parsed = ContactSchema.safeParse(body)
