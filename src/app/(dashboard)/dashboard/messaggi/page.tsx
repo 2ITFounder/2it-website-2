@@ -2,15 +2,13 @@
 
 import { useEffect, useMemo, useState, useRef, useLayoutEffect, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { MessageSquare, Plus, Send } from "lucide-react"
+import { Plus } from "lucide-react"
 import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { Button } from "@/src/components/ui/button"
-import { Textarea } from "@/src/components/ui/textarea"
 import { useChats } from "@/src/hooks/useChats"
 import { MessageItem, useMessages, type MessagesResponse } from "@/src/hooks/useMessages"
 import { useChatUsers } from "@/src/hooks/useChatUsers"
-import { cn } from "@/src/lib/utils"
 import { createSupabaseBrowserClient } from "@/src/lib/supabase/client"
 import { normalizeIncoming, sortByCreatedAt } from "./lib/message-helpers"
 import { dedupeMessages } from "./lib/messages-dedupe"
@@ -18,8 +16,11 @@ import { IS_DEV, NEAR_BOTTOM_PX } from "./lib/messages-constants"
 import { useChatPresenceHeartbeat } from "./hooks/useChatPresenceHeartbeat"
 import { useMessagesCacheActions } from "./hooks/useMessagesCacheActions"
 import { useMessagesRealtimeChannel } from "./hooks/useMessagesRealtimeChannel"
-import { ChatListItem } from "./components/ChatListItem"
-import { MessageRow } from "./components/MessageRow"
+import { ChatsSidebar } from "./components/ChatsSidebar"
+import { MessagesHeader } from "./components/MessagesHeader"
+import { NewChatRecipientPicker } from "./components/NewChatRecipientPicker"
+import { MessagesList } from "./components/MessagesList"
+import { MessageComposerBar } from "./components/MessageComposerBar"
 import { apiDeleteMessage, apiMarkChatNotificationsRead, apiUpdateMessageTag } from "./lib/message-actions"
 import { apiGet } from "@/src/lib/api"
 
@@ -296,7 +297,7 @@ export default function MessagesPage() {
 
   useChatPresenceHeartbeat(selectedChat)
 
-  const canSend = composer.trim().length > 0 && (selectedChat || recipient)
+  const canSend = composer.trim().length > 0 && Boolean(selectedChat || recipient)
 
   const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
     const container = scrollRef.current
@@ -536,176 +537,56 @@ export default function MessagesPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <GlassCard className="p-0">
-          <div className="px-4 py-3 border-b flex items-center justify-between">
-            <div className="font-semibold">Chat</div>
-          </div>
-
-          <div className="max-h-[70vh] overflow-y-auto divide-y">
-            {chatsQuery.isLoading ? (
-              <div className="p-4 text-sm text-muted-foreground">Caricamento...</div>
-              ) : chats.length === 0 ? (
-                <div className="p-4 text-sm text-muted-foreground">Nessuna chat</div>
-              ) : (
-                chats.map((chat) => (
-                  <ChatListItem
-                    key={chat.id}
-                    chat={chat}
-                    currentUserId={currentUserId}
-                    selectedChatId={selectedChat}
-                    onSelect={handleSelectChat}
-                  />
-                ))
-              )}
-          </div>
-        </GlassCard>
+        <ChatsSidebar
+          chats={chats}
+          isLoading={chatsQuery.isLoading}
+          currentUserId={currentUserId}
+          selectedChat={selectedChat}
+          onSelect={handleSelectChat}
+        />
 
         <GlassCard className="lg:col-span-2 p-0 flex flex-col h-[70vh]">
-          <div className="px-4 py-3 border-b flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <MessageSquare className="w-4 h-4" />
-              <div className="min-w-0">
-                <div className="font-semibold truncate max-w-[50vw]" title={headerTitle || undefined}>
-                  {headerTitle}
-                </div>
-                {isNewChatMode ? (
-                  <div className="text-xs text-muted-foreground">
-                    Scegli il destinatario e invia il primo messaggio.
-                  </div>
-                ) : !selectedChat ? null : null}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {[
-                { label: "Tutti", value: "all" },
-                { label: "Importanti", value: "important" },
-                { label: "Idee", value: "idea" },
-              ].map((f) => (
-                <Button
-                  key={f.value}
-                  variant={filter === f.value ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => handleFilterChange(f.value as typeof filter)}
-                >
-                  {f.label}
-                </Button>
-              ))}
-            </div>
-          </div>
+          <MessagesHeader
+            headerTitle={headerTitle}
+            filter={filter}
+            onFilterChange={handleFilterChange}
+            isNewChatMode={isNewChatMode}
+            selectedChat={selectedChat}
+          />
 
           {isNewChatMode ? (
-            <div className="p-4 border-b space-y-3">
-              <div className="text-sm text-muted-foreground">Seleziona il destinatario</div>
-              <div className="rounded-lg border bg-background">
-                {users.length === 0 ? (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">Nessun utente trovato. Aggiungi un altro admin.</p>
-                ) : (
-                  users.map((u) => {
-                    const label = u.username || `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() || u.email
-                    const active = recipient === u.user_id
-                    return (
-                      <button
-                        key={u.user_id}
-                        className={cn(
-                          "w-full text-left px-3 py-2 text-sm transition flex items-center justify-between",
-                          active ? "bg-accent/20 text-accent-foreground" : "hover:bg-muted/70"
-                        )}
-                        onClick={() => setRecipient(u.user_id)}
-                      >
-                        <span>{label || "Senza nome"}</span>
-                        {active ? <span className="text-xs text-accent">Selezionato</span> : null}
-                      </button>
-                    )
-                  })
-                )}
-              </div>
-            </div>
+            <NewChatRecipientPicker users={users} recipient={recipient} onSelectRecipient={setRecipient} />
           ) : null}
 
-          <div className="relative flex-1 overflow-y-auto p-4 space-y-3" ref={scrollRef} onScroll={handleScroll}>
-            {actionTarget ? (
-              <div
-                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] pointer-events-auto"
-                onClick={() => setActionTarget(null)}
-                role="presentation"
-              />
-            ) : null}
+          <MessagesList
+            actionTarget={actionTarget}
+            onClearActionTarget={() => setActionTarget(null)}
+            scrollRef={scrollRef}
+            bottomRef={bottomRef}
+            onScroll={handleScroll}
+            selectedChat={selectedChat}
+            isNewChatMode={isNewChatMode}
+            messagesQuery={messagesQuery}
+            filteredMessages={filteredMessages}
+            currentUserId={currentUserId}
+            recipient={recipient}
+            recipientLabel={recipientLabel}
+            hasNewMessages={hasNewMessages}
+            isAtBottom={isAtBottom}
+            ensureBottom={ensureBottom}
+            updateMessageTag={updateMessageTag}
+            deleteMessage={deleteMessage}
+            handleRetry={handleRetry}
+            handleOpenActions={handleOpenActions}
+          />
 
-            {!selectedChat && !isNewChatMode ? null : messagesQuery.isLoading ? (
-              <div className="text-sm text-muted-foreground">Caricamento messaggi...</div>
-            ) : filteredMessages.length === 0 ? (
-              <div className="text-sm text-muted-foreground">
-                {recipient ? `Scrivi il primo messaggio a ${recipientLabel || "un utente"}.` : "Nessun messaggio"}
-              </div>
-            ) : (
-              <>
-                {messagesQuery.hasNextPage ? (
-                  <div className="flex justify-center">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => messagesQuery.fetchNextPage()}
-                      disabled={messagesQuery.isFetchingNextPage}
-                    >
-                      {messagesQuery.isFetchingNextPage ? "Carico..." : "Carica messaggi precedenti"}
-                    </Button>
-                  </div>
-                ) : null}
-
-                {filteredMessages.map((m) => {
-                  const mine = m.sender_id === currentUserId
-                  const actionKey = actionTarget?.client_temp_id ?? actionTarget?.tempId ?? actionTarget?.id ?? null
-                  const messageKey = m.client_temp_id ?? m.tempId ?? m.id
-                  const isActive = Boolean(actionKey && messageKey === actionKey)
-                  const dimmed = Boolean(actionTarget && !isActive)
-
-                  return (
-                    <MessageRow
-                      key={messageKey}
-                      id={m.id}
-                      clientTempId={m.client_temp_id ?? null}
-                      tempId={m.tempId}
-                      chatId={m.chat_id}
-                      senderId={m.sender_id}
-                      body={m.body}
-                      createdAt={m.created_at}
-                      status={m.status}
-                      sendStatus={m.sendStatus}
-                      tag={m.tag ?? null}
-                      isMine={mine}
-                      isActive={isActive}
-                      dimmed={dimmed}
-                      onOpenActions={handleOpenActions}
-                      onUpdateTag={updateMessageTag}
-                      onDelete={deleteMessage}
-                      onRetry={handleRetry}
-                    />
-                  )
-                })}
-
-                {hasNewMessages && !isAtBottom ? (
-                  <div className="sticky bottom-2 flex justify-center">
-                    <Button size="sm" variant="secondary" onClick={() => ensureBottom("smooth")}>
-                      Nuovi messaggi
-                    </Button>
-                  </div>
-                ) : null}
-                <div ref={bottomRef} />
-              </>
-            )}
-          </div>
-
-          <div className="border-t p-3 flex items-center gap-2">
-            <Textarea placeholder="Scrivi un messaggio..." value={composer} onChange={(e) => setComposer(e.target.value)} rows={2} />
-            <Button
-              onClick={() => triggerSend(composer)}
-              disabled={!canSend || sendMutation.isPending}
-              className="shrink-0"
-            >
-              <Send className="w-4 h-4 mr-2" />
-              Invia
-            </Button>
-          </div>
+          <MessageComposerBar
+            composer={composer}
+            setComposer={setComposer}
+            canSend={canSend}
+            isPending={sendMutation.isPending}
+            onSend={() => triggerSend(composer)}
+          />
         </GlassCard>
       </div>
     </div>
