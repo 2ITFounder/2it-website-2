@@ -18,6 +18,7 @@ const navItems = [
   { href: "/dashboard/contatti", label: "Contatti" },
   { href: "/dashboard/clienti", label: "Clienti" },
   { href: "/dashboard/progetti", label: "Progetti" },
+  { href: "/dashboard/spese", label: "Spese" },
   { href: "/dashboard/report", label: "Report" },
   { href: "/dashboard/impostazioni", label: "Impostazioni" },
 ]
