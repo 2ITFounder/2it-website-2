@@ -1,9 +1,9 @@
-import { NextResponse } from "next/server"
+import { NextResponse, type NextRequest } from "next/server"
 import { createSupabaseRouteClient } from "@/src/lib/supabase/route"
 
 export async function PATCH(
-  req: Request,
-  { params }: { params: { id: string } }
+  req: NextRequest,
+  { params }: { params: { id?: string } }
 ) {
   const supabase = await createSupabaseRouteClient()
   const { data: auth } = await supabase.auth.getUser()
@@ -11,23 +11,20 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // Next ti garantisce params: { id: string } se la route è corretta.
-  // Ma teniamo fallback in caso di runtime strani.
-  let cycleId: string = params.id
+  // 1) prova params
+  let cycleId = params?.id
 
-  // fallback: query param
+  // 2) prova query
+  if (!cycleId) cycleId = req.nextUrl.searchParams.get("id") ?? undefined
+
+  // 3) prova parse pathname: /api/expense-cycles/<id>/pay  => <id> è il penultimo segmento
   if (!cycleId) {
-    cycleId = new URL(req.url).searchParams.get("id") ?? ""
+    const parts = req.nextUrl.pathname.split("/").filter(Boolean)
+    const payIdx = parts.lastIndexOf("pay")
+    if (payIdx > 0) cycleId = parts[payIdx - 1]
   }
 
-  // fallback: path (/api/expense-cycles/<id>/pay)
-  if (!cycleId) {
-    const parts = new URL(req.url).pathname.split("/").filter(Boolean)
-    const idx = parts.lastIndexOf("expense-cycles")
-    if (idx >= 0 && parts[idx + 1]) cycleId = parts[idx + 1]
-  }
-
-  // fallback: body
+  // 4) prova body
   if (!cycleId) {
     try {
       const body = (await req.json()) as { id?: string }
@@ -36,7 +33,14 @@ export async function PATCH(
   }
 
   if (!cycleId) {
-    return NextResponse.json({ error: "Missing id" }, { status: 400 })
+    // DEBUG utile se ricapita: ti dice che url sta vedendo davvero il server
+    return NextResponse.json(
+      {
+        error: "Missing id",
+        debug: { params, pathname: req.nextUrl.pathname, url: req.url },
+      },
+      { status: 400 }
+    )
   }
 
   const { data, error } = await supabase
@@ -46,15 +50,9 @@ export async function PATCH(
   if (error) {
     const msg = error.message || "Errore pagamento ciclo"
     const normalized = msg.toLowerCase()
-    if (normalized.includes("not authorized")) {
-      return NextResponse.json({ error: msg }, { status: 403 })
-    }
-    if (normalized.includes("not found")) {
-      return NextResponse.json({ error: msg }, { status: 404 })
-    }
-    if (normalized.includes("already paid")) {
-      return NextResponse.json({ error: msg }, { status: 409 })
-    }
+    if (normalized.includes("not authorized")) return NextResponse.json({ error: msg }, { status: 403 })
+    if (normalized.includes("not found")) return NextResponse.json({ error: msg }, { status: 404 })
+    if (normalized.includes("already paid")) return NextResponse.json({ error: msg }, { status: 409 })
     return NextResponse.json({ error: msg }, { status: 400 })
   }
 
