@@ -83,10 +83,20 @@ export default function ExpensesPage() {
 
   const cyclesQuery = useQuery({
     queryKey: ["expense-cycles", selectedExpense?.id],
-    queryFn: ({ signal }) => (selectedExpense ? apiGetExpenseCycles(selectedExpense.id, signal) : []),
-    enabled: Boolean(selectedExpense),
+    queryFn: ({ signal }) => {
+      if (!selectedExpense?.id) return []
+      return apiGetExpenseCycles(selectedExpense.id, signal)
+    },
+    enabled: Boolean(selectedExpense?.id),
   })
   const cycles = (cyclesQuery.data as ExpenseCycle[] | undefined) ?? []
+  const nextPending = useMemo(() => {
+    const pending = cycles.filter((c) => c.status === "pending")
+    if (pending.length === 0) return null
+    return pending.reduce((earliest, current) => {
+      return earliest && earliest.due_date <= current.due_date ? earliest : current
+    })
+  }, [cycles])
 
   const payMutation = useMutation({
     mutationFn: async (payload: { cycleId: string; expenseId?: string }) => {
@@ -99,7 +109,15 @@ export default function ExpensesPage() {
         variables.expenseId ? qc.invalidateQueries({ queryKey: ["expense-cycles", variables.expenseId] }) : Promise.resolve(),
       ])
     },
-    onError: (err) => setActionError(extractErrorMessage(err)),
+    onError: (err: any) => {
+      const msg = extractErrorMessage(err)
+      const normalized = (msg ?? "").toLowerCase()
+      if (normalized.includes("already paid")) {
+        setActionError("Questo ciclo e gia stato pagato")
+      } else {
+        setActionError(msg)
+      }
+    },
   })
 
   const expenses = expensesQuery.data ?? []
@@ -304,10 +322,12 @@ export default function ExpensesPage() {
       </GlassCard>
 
       <Dialog open={detailOpen} onOpenChange={(v) => (v ? setDetailOpen(true) : closeDetail())}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-4xl" aria-describedby="expense-detail-description">
           <DialogHeader>
             <DialogTitle>{selectedExpense?.name ?? "Spesa"}</DialogTitle>
-            <p className="text-sm text-muted-foreground">Dettaglio spesa, note e cicli di pagamento</p>
+            <p id="expense-detail-description" className="text-sm text-muted-foreground">
+              Dettaglio spesa, note e cicli di pagamento
+            </p>
           </DialogHeader>
 
           {selectedExpense ? (
@@ -362,41 +382,46 @@ export default function ExpensesPage() {
                     {extractErrorMessage(cyclesQuery.error) ?? "Errore nel caricare i cicli"}
                   </div>
                 ) : cycles.length ? (
-                  cycles.map((cycle) => {
-                    const due = new Date(`${cycle.due_date}T00:00:00`)
-                    const isLate = cycle.status === "pending" && due.getTime() < Date.now()
-                    const normalizedStatus = isLate ? "late" : cycle.status
-                    const canPay = normalizedStatus !== "paid"
-                    return (
-                      <div key={cycle.id} className="px-3 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{formatDate(cycle.due_date)}</p>
-                          <p className="text-sm text-muted-foreground">
-                            Importo: {formatCurrency(cycle.amount, selectedExpense.currency)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className={`text-xs px-2 py-1 rounded-full ${cycleStatusClass[normalizedStatus]}`}>
-                            {normalizedStatus === "late" ? "In ritardo" : normalizedStatus === "paid" ? "Pagato" : "Da pagare"}
-                          </span>
-                          {cycle.paid_at ? (
-                            <span className="text-xs text-muted-foreground">
-                              Pagato il {formatDate(cycle.paid_at?.slice(0, 10))}
+                  <>
+                    {!nextPending ? (
+                      <div className="p-3 text-sm text-muted-foreground">Nessun ciclo pending da pagare.</div>
+                    ) : null}
+                    {cycles.map((cycle) => {
+                      const due = new Date(`${cycle.due_date}T00:00:00`)
+                      const isLate = cycle.status === "pending" && due.getTime() < Date.now()
+                      const normalizedStatus = isLate ? "late" : cycle.status
+                      const isNextPending = nextPending && nextPending.id === cycle.id && cycle.status === "pending"
+                      return (
+                        <div key={cycle.id} className="px-3 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{formatDate(cycle.due_date)}</p>
+                            <p className="text-sm text-muted-foreground">
+                              Importo: {formatCurrency(cycle.amount, selectedExpense.currency)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className={`text-xs px-2 py-1 rounded-full ${cycleStatusClass[normalizedStatus]}`}>
+                              {normalizedStatus === "late" ? "In ritardo" : normalizedStatus === "paid" ? "Pagato" : "Da pagare"}
                             </span>
-                          ) : null}
-                          {canPay ? (
-                            <Button
-                              size="sm"
-                              disabled={payMutation.isPending}
-                              onClick={() => payMutation.mutate({ cycleId: cycle.id, expenseId: cycle.expense_id })}
-                            >
-                              {payMutation.isPending ? "Aggiorno..." : "Segna come pagata"}
-                            </Button>
-                          ) : null}
+                            {cycle.paid_at ? (
+                              <span className="text-xs text-muted-foreground">
+                                Pagato il {formatDate(cycle.paid_at?.slice(0, 10))}
+                              </span>
+                            ) : null}
+                            {isNextPending ? (
+                              <Button
+                                size="sm"
+                                disabled={payMutation.isPending}
+                                onClick={() => payMutation.mutate({ cycleId: cycle.id, expenseId: cycle.expense_id })}
+                              >
+                                {payMutation.isPending ? "Aggiorno..." : "Segna come pagata"}
+                              </Button>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })
+                      )
+                    })}
+                  </>
                 ) : (
                   <div className="p-4 text-sm text-muted-foreground">Nessun ciclo disponibile.</div>
                 )}

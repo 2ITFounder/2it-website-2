@@ -50,9 +50,9 @@ export async function PATCH(
   if (error) {
     const msg = error.message || "Errore pagamento ciclo"
     const normalized = msg.toLowerCase()
+    if (normalized.includes("already paid")) return NextResponse.json({ error: msg }, { status: 409 })
     if (normalized.includes("not authorized")) return NextResponse.json({ error: msg }, { status: 403 })
     if (normalized.includes("not found")) return NextResponse.json({ error: msg }, { status: 404 })
-    if (normalized.includes("already paid")) return NextResponse.json({ error: msg }, { status: 409 })
     return NextResponse.json({ error: msg }, { status: 400 })
   }
 
