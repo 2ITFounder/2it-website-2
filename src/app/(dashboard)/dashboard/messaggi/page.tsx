@@ -14,7 +14,10 @@ import { cn } from "@/src/lib/utils"
 import { createSupabaseBrowserClient } from "@/src/lib/supabase/client"
 import { normalizeIncoming, sortByCreatedAt } from "./lib/message-helpers"
 import { dedupeMessages } from "./lib/messages-dedupe"
-import { IS_DEV, NEAR_BOTTOM_PX, PRESENCE_HEARTBEAT_MS } from "./lib/messages-constants"
+import { IS_DEV, NEAR_BOTTOM_PX } from "./lib/messages-constants"
+import { useChatPresenceHeartbeat } from "./hooks/useChatPresenceHeartbeat"
+import { useMessagesCacheActions } from "./hooks/useMessagesCacheActions"
+import { useMessagesRealtimeChannel } from "./hooks/useMessagesRealtimeChannel"
 import { ChatListItem } from "./components/ChatListItem"
 import { MessageRow } from "./components/MessageRow"
 import { apiDeleteMessage, apiMarkChatNotificationsRead, apiUpdateMessageTag } from "./lib/message-actions"
@@ -37,9 +40,6 @@ export default function MessagesPage() {
   const [actionTarget, setActionTarget] = useState<MessageItem | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
-  const channelRef = useRef<any | null>(null)
-  const channelIdRef = useRef<string | null>(null)
-  const lastLocalUpdateRef = useRef<"optimistic" | "realtime" | "onSuccess" | null>(null)
   const supabase = useMemo(() => createSupabaseBrowserClient(), [])
   const scrollPositionsRef = useRef<Record<string, number>>({})
   const initialScrollRef = useRef<Record<string, boolean>>({})
@@ -62,6 +62,7 @@ export default function MessagesPage() {
   const logDebug = useCallback((...args: any[]) => {
     if (IS_DEV) console.debug(...args)
   }, [])
+  const { mergeMessageIntoCache, removeMessageFromCache, lastLocalUpdateRef } = useMessagesCacheActions({ qc, logDebug })
 
   // Prefetch la prima chat disponibile per eliminare il primo loading
   useEffect(() => {
@@ -293,60 +294,7 @@ export default function MessagesPage() {
     }
   }, [selectedChat])
 
-  useEffect(() => {
-    if (!selectedChat) return
-    if (typeof document === "undefined") return
-
-    let interval: ReturnType<typeof setInterval> | null = null
-
-    const heartbeat = async () => {
-      try {
-        await fetch("/api/chat-presence", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chatId: selectedChat }),
-        })
-      } catch {
-        // ignore heartbeat errors
-      }
-    }
-
-    const start = () => {
-      if (interval) return
-      if (document.visibilityState !== "visible") return
-      if (IS_DEV) console.info("[presence] start", { chatId: selectedChat })
-      void heartbeat()
-      interval = setInterval(heartbeat, PRESENCE_HEARTBEAT_MS)
-    }
-
-    const stop = (reason: string) => {
-      if (!interval) return
-      clearInterval(interval)
-      interval = null
-      if (IS_DEV) console.info("[presence] stop", { chatId: selectedChat, reason })
-    }
-
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        start()
-      } else {
-        stop("hidden")
-      }
-    }
-
-    start()
-    document.addEventListener("visibilitychange", handleVisibility)
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibility)
-      stop("cleanup")
-      void fetch("/api/chat-presence", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId: selectedChat }),
-      }).catch(() => {})
-    }
-  }, [selectedChat])
+  useChatPresenceHeartbeat(selectedChat)
 
   const canSend = composer.trim().length > 0 && (selectedChat || recipient)
 
@@ -471,93 +419,6 @@ export default function MessagesPage() {
     }
   }
 
-  const mergeMessageIntoCache = useCallback(
-    (chatId: string, incoming: MessageItem, source: "realtime" | "refetch" = "realtime") => {
-    const normalized = normalizeIncoming(incoming)
-    lastLocalUpdateRef.current = source === "realtime" ? "realtime" : lastLocalUpdateRef.current
-    if (source === "realtime") {
-      logDebug("[msg][realtime] merge", {
-        chatId,
-        id: normalized.id,
-        client_temp_id: normalized.client_temp_id ?? null,
-        tempId: normalized.tempId ?? null,
-      })
-    }
-
-    let mergeAction: "reconcile" | "append" | "noop" = "noop"
-    qc.setQueryData<MessagesData>(["messages", chatId], (prev) => {
-      const base: MessagesData = {
-        pages: [{ items: [normalized], members: [], nextCursor: null }],
-        pageParams: [null],
-      }
-      if (!prev) {
-        mergeAction = "append"
-        return base
-      }
-
-      let updated = false
-
-      const pages = prev.pages.map((p, idx) => {
-        const items = p.items.map((m): MessageItem => {
-          const sameById = m.id === normalized.id
-          const sameByTemp =
-            Boolean(normalized.tempId) &&
-            (m.tempId === normalized.tempId || (!m.id && m.tempId && m.tempId === normalized.tempId))
-
-          if (sameById || sameByTemp) {
-            updated = true
-            return {
-              ...m,
-              ...normalized,
-              id: normalized.id ?? m.id,
-              tempId: undefined,
-              sendStatus: normalized.sendStatus ?? "sent",
-              status: normalized.status ?? m.status ?? "sent",
-            }
-          }
-          return m
-        })
-
-        const deduped = dedupeMessages(items).sort(sortByCreatedAt)
-        if (idx === 0) {
-          return { ...p, items: deduped }
-        }
-        return { ...p, items: deduped }
-      })
-
-      if (updated) {
-        mergeAction = "reconcile"
-        return {
-          ...prev,
-          pages: pages.map((p) => ({ ...p, items: [...p.items].sort(sortByCreatedAt) })),
-        }
-      }
-
-      const nextPages = [...pages]
-      const firstIndex = 0
-      const mergedItems = dedupeMessages([...nextPages[firstIndex].items, normalized]).sort(sortByCreatedAt)
-      nextPages[firstIndex] = { ...nextPages[firstIndex], items: mergedItems }
-      mergeAction = "append"
-
-      return { ...prev, pages: nextPages }
-    })
-    if (IS_DEV && source === "realtime") {
-      logDebug("[msg][realtime] mergeAction", { chatId, id: normalized.id, action: mergeAction })
-    }
-  }, [logDebug, qc])
-
-  const removeMessageFromCache = useCallback((chatId: string, messageId: string) => {
-    qc.setQueryData<MessagesData>(["messages", chatId], (prev) => {
-      if (!prev) return prev
-      const nextPages = prev.pages.map((p, idx) => {
-        if (idx !== 0) return p
-        const filtered = p.items.filter((m) => m.id !== messageId)
-        return { ...p, items: filtered }
-      })
-      return { ...prev, pages: nextPages }
-    })
-  }, [qc])
-
   const updateMessageTag = useCallback((msg: MessageItem, tag: "important" | "idea" | "none") => {
     if (!msg?.id) return
     void (async () => {
@@ -595,87 +456,15 @@ export default function MessagesPage() {
     setActionTarget(msg)
   }, [])
 
-  useEffect(() => {
-    if (!selectedChat) return
-
-    if (!supabase) return
-    if (channelRef.current) {
-      logDebug("[RT][messages] cleanup existing channel before subscribe", { chatId: selectedChat })
-      channelRef.current.unsubscribe()
-      supabase.removeChannel(channelRef.current)
-      channelRef.current = null
-      channelIdRef.current = null
-    }
-
-    const channelId = `messages-${selectedChat}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    channelIdRef.current = channelId
-    logDebug("[RT][messages] subscribe", { chatId: selectedChat, channelId })
-
-    const channel = supabase
-      .channel(`messages-${selectedChat}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${selectedChat}` },
-        (payload) => {
-          const msg = payload.new as any
-          logDebug("[RT][messages] insert", {
-            chatId: selectedChat,
-            channelId,
-            id: msg?.id,
-            client_temp_id: msg?.client_temp_id ?? null,
-          })
-          const newMsg = normalizeIncoming(payload.new as any as MessageItem)
-          mergeMessageIntoCache(selectedChat, newMsg)
-          // refresh sidebar ordering/last message
-          qc.invalidateQueries({ queryKey: ["chats"] })
-          void markChatNotificationsRead(selectedChat)
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "messages", filter: `chat_id=eq.${selectedChat}` },
-        (payload) => {
-          const msg = payload.new as any
-          logDebug("[RT][messages] update", {
-            chatId: selectedChat,
-            channelId,
-            id: msg?.id,
-            client_temp_id: msg?.client_temp_id ?? null,
-          })
-          const updated = normalizeIncoming(payload.new as any as MessageItem)
-          mergeMessageIntoCache(selectedChat, updated)
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "messages", filter: `chat_id=eq.${selectedChat}` },
-        (payload) => {
-          const msg = payload.old as any
-          logDebug("[RT][messages] delete", {
-            chatId: selectedChat,
-            channelId,
-            id: msg?.id,
-            client_temp_id: msg?.client_temp_id ?? null,
-          })
-          const deletedId = (payload.old as any)?.id
-          if (deletedId) removeMessageFromCache(selectedChat, deletedId)
-          qc.invalidateQueries({ queryKey: ["chats"] })
-        }
-      )
-      .subscribe((status) => {
-        logDebug("[RT][messages] status", { chatId: selectedChat, channelId, status })
-      })
-
-    channelRef.current = channel
-
-    return () => {
-      logDebug("[RT][messages] unsubscribe", { chatId: selectedChat, channelId })
-      channel.unsubscribe()
-      supabase.removeChannel(channel)
-      channelRef.current = null
-      channelIdRef.current = null
-    }
-  }, [logDebug, markChatNotificationsRead, mergeMessageIntoCache, qc, removeMessageFromCache, selectedChat, supabase])
+  useMessagesRealtimeChannel({
+    selectedChat,
+    supabase,
+    mergeMessageIntoCache,
+    removeMessageFromCache,
+    markChatNotificationsRead,
+    qc,
+    logDebug,
+  })
 
   const allMessages: MessageItem[] = useMemo(() => {
     const items = (messagesQuery.data?.pages ?? []).flatMap((p: MessagesResponse) => p.items)
