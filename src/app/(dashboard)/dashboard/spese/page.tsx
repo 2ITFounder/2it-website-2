@@ -68,48 +68,57 @@ const computeSplitPercentages = (expense: Expense): [number, number] => {
   return [50, 50]
 }
 
+type CycleStatus = "pending" | "late" | "paid"
+
+
 export default function ExpensesPage() {
   const qc = useQueryClient()
   const [query, setQuery] = useState("")
   const [onlyActive, setOnlyActive] = useState(true)
-  const [detailOpen, setDetailOpen] = useState(false)
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  const expensesQuery = useQuery({
+  const isOpen = Boolean(selectedExpense)
+
+  const expensesQuery = useQuery<Expense[], Error>({
     queryKey: ["expenses", { active: onlyActive }],
-    queryFn: ({ signal }) => apiGetExpenses(onlyActive, signal),
+    queryFn: ({ signal }: { signal: AbortSignal }) => apiGetExpenses(onlyActive, signal),
   })
 
-  const cyclesQuery = useQuery({
+  const cyclesQuery = useQuery<ExpenseCycle[], Error>({
     queryKey: ["expense-cycles", selectedExpense?.id],
-    queryFn: ({ signal }) => {
-      if (!selectedExpense?.id) return []
+    enabled: Boolean(selectedExpense?.id),
+    queryFn: ({ signal }: { signal: AbortSignal }) => {
+      if (!selectedExpense?.id) return Promise.resolve([] as ExpenseCycle[])
       return apiGetExpenseCycles(selectedExpense.id, signal)
     },
-    enabled: Boolean(selectedExpense?.id),
   })
-  const cycles = (cyclesQuery.data as ExpenseCycle[] | undefined) ?? []
-  const nextPending = useMemo(() => {
-    const pending = cycles.filter((c) => c.status === "pending")
+
+  const cycles = cyclesQuery.data ?? []
+
+  const nextPending = useMemo<ExpenseCycle | null>(() => {
+    const pending = cycles.filter((c: ExpenseCycle) => c.status === "pending")
     if (pending.length === 0) return null
-    return pending.reduce((earliest, current) => {
+    return pending.reduce((earliest: ExpenseCycle, current: ExpenseCycle) => {
       return earliest && earliest.due_date <= current.due_date ? earliest : current
     })
   }, [cycles])
 
-  const payMutation = useMutation({
-    mutationFn: async (payload: { cycleId: string; expenseId?: string }) => {
+
+  const payMutation = useMutation<unknown, Error, { cycleId: string; expenseId?: string }>({
+    mutationFn: async ({ cycleId }: { cycleId: string; expenseId?: string }) => {
       setActionError(null)
-      return apiPayExpenseCycle(payload.cycleId)
+      return apiPayExpenseCycle(cycleId)
     },
-    onSuccess: async (_, variables) => {
+    onSuccess: async (_data: unknown, variables: { cycleId: string; expenseId?: string }) => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["expenses"] }),
-        variables.expenseId ? qc.invalidateQueries({ queryKey: ["expense-cycles", variables.expenseId] }) : Promise.resolve(),
+        variables.expenseId
+          ? qc.invalidateQueries({ queryKey: ["expense-cycles", variables.expenseId] })
+          : Promise.resolve(),
       ])
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
       const msg = extractErrorMessage(err)
       const normalized = (msg ?? "").toLowerCase()
       if (normalized.includes("already paid")) {
@@ -122,11 +131,11 @@ export default function ExpensesPage() {
 
   const expenses = expensesQuery.data ?? []
 
-  const visibleExpenses = useMemo(() => {
-    const list = onlyActive ? expenses.filter((e) => e.active) : expenses
+  const visibleExpenses = useMemo<Expense[]>(() => {
+    const list: Expense[] = onlyActive ? expenses.filter((e: Expense) => e.active) : expenses
     const q = query.trim().toLowerCase()
     if (!q) return list
-    return list.filter((e) => {
+    return list.filter((e: Expense) => {
       const tags = (e.tags ?? []).join(" ").toLowerCase()
       return (
         e.name.toLowerCase().includes(q) ||
@@ -137,6 +146,7 @@ export default function ExpensesPage() {
     })
   }, [expenses, onlyActive, query])
 
+
   const totals = useMemo(() => {
     let monthly = 0
     let annual = 0
@@ -144,7 +154,7 @@ export default function ExpensesPage() {
     let myMonthly = 0
     let colleagueMonthly = 0
 
-    for (const exp of onlyActive ? expenses.filter((e) => e.active) : expenses) {
+    for (const exp of onlyActive ? expenses.filter((e: Expense) => e.active) : expenses) {
       const baseMonthly = computeBaseMonthly(exp)
       if (exp.cadence === "one_time") {
         oneTime += exp.amount
@@ -166,11 +176,9 @@ export default function ExpensesPage() {
   const openDetail = (expense: Expense) => {
     setSelectedExpense(expense)
     setActionError(null)
-    setDetailOpen(true)
   }
 
   const closeDetail = () => {
-    setDetailOpen(false)
     setSelectedExpense(null)
     setActionError(null)
   }
@@ -185,7 +193,7 @@ export default function ExpensesPage() {
 
         <div className="flex flex-wrap gap-3 items-center">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Switch checked={onlyActive} onCheckedChange={(v) => setOnlyActive(Boolean(v))} id="only-active" />
+            <Switch checked={onlyActive} onCheckedChange={(v: Boolean) => setOnlyActive(Boolean(v))} id="only-active" />
             <label htmlFor="only-active">Mostra solo attive</label>
           </div>
           <Button
@@ -220,9 +228,7 @@ export default function ExpensesPage() {
             <div>
               <p className="text-sm text-muted-foreground">Totale annuo stimato</p>
               <p className="text-2xl font-semibold">{formatCurrency(totals.annual || 0)}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Una tantum: {formatCurrency(totals.oneTime || 0)}
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">Una tantum: {formatCurrency(totals.oneTime || 0)}</p>
             </div>
             <CalendarDays className="w-8 h-8 text-accent" />
           </div>
@@ -275,7 +281,7 @@ export default function ExpensesPage() {
           ) : visibleExpenses.length === 0 ? (
             <div className="p-4 text-muted-foreground text-sm">Nessuna spesa trovata.</div>
           ) : (
-            visibleExpenses.map((exp) => (
+            visibleExpenses.map((exp: Expense) => (
               <div key={exp.id} className="p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -286,7 +292,6 @@ export default function ExpensesPage() {
                     ) : null}
                   </div>
 
-                  {/* Stato: piccolo, non espande */}
                   <span
                     className={[
                       "shrink-0 inline-flex items-center justify-center",
@@ -348,7 +353,7 @@ export default function ExpensesPage() {
             ) : visibleExpenses.length === 0 ? (
               <div className="p-4 text-muted-foreground text-sm">Nessuna spesa trovata.</div>
             ) : (
-              visibleExpenses.map((exp) => (
+              visibleExpenses.map((exp: Expense) => (
                 <div
                   key={exp.id}
                   className="grid grid-cols-[2fr,1.2fr,1fr,1fr,1fr,1fr,1fr,1fr] px-4 py-3 items-center border-t border-border/50 hover:bg-muted/30 transition"
@@ -386,12 +391,17 @@ export default function ExpensesPage() {
         </div>
       </GlassCard>
 
-      <Dialog open={detailOpen} onOpenChange={(v) => (v ? setDetailOpen(true) : closeDetail())}>
+      <Dialog
+        open={isOpen}
+        onOpenChange={(open: boolean) => {
+          if (!open) closeDetail()
+        }}
+      >
         <DialogContent
-          className="w-[calc(100vw-2rem)] sm:w-full sm:max-w-4xl max-h-[85vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6"
+          className="w-[calc(100vw-2rem)] sm:w-full sm:max-w-4xl max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden p-4 sm:p-6"
           aria-describedby="expense-detail-description"
-          >
-
+          onOpenAutoFocus={(e: Event) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>{selectedExpense?.name ?? "Spesa"}</DialogTitle>
             <p id="expense-detail-description" className="text-sm text-muted-foreground">
@@ -455,13 +465,16 @@ export default function ExpensesPage() {
                     {!nextPending ? (
                       <div className="p-3 text-sm text-muted-foreground">Nessun ciclo pending da pagare.</div>
                     ) : null}
-                    {cycles.map((cycle) => {
+                    {cycles.map((cycle: ExpenseCycle) => {
                       const due = new Date(`${cycle.due_date}T00:00:00`)
                       const isLate = cycle.status === "pending" && due.getTime() < Date.now()
-                      const normalizedStatus = isLate ? "late" : cycle.status
+                      const normalizedStatus: CycleStatus = (isLate ? "late" : cycle.status) as CycleStatus
                       const isNextPending = nextPending && nextPending.id === cycle.id && cycle.status === "pending"
                       return (
-                        <div key={cycle.id} className="px-3 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div
+                          key={cycle.id}
+                          className="px-3 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                        >
                           <div>
                             <p className="font-medium">{formatDate(cycle.due_date)}</p>
                             <p className="text-sm text-muted-foreground">
@@ -470,7 +483,11 @@ export default function ExpensesPage() {
                           </div>
                           <div className="flex items-center gap-3">
                             <span className={`text-xs px-2 py-1 rounded-full ${cycleStatusClass[normalizedStatus]}`}>
-                              {normalizedStatus === "late" ? "In ritardo" : normalizedStatus === "paid" ? "Pagato" : "Da pagare"}
+                              {normalizedStatus === "late"
+                                ? "In ritardo"
+                                : normalizedStatus === "paid"
+                                  ? "Pagato"
+                                  : "Da pagare"}
                             </span>
                             {cycle.paid_at ? (
                               <span className="text-xs text-muted-foreground">
