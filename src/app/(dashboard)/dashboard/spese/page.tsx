@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import type { ChangeEvent } from "react"
 import { CalendarDays, CheckCircle2, CreditCard, RefreshCw, Search, XCircle } from "lucide-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
@@ -11,7 +12,15 @@ import { Switch } from "@/src/components/ui/switch"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/src/components/ui/dialog"
 
 import { Expense, ExpenseCycle } from "@/src/lib/expenses/schema"
-import { apiGetExpenseCycles, apiGetExpenses, apiPayExpenseCycle, extractErrorMessage } from "./_lib/expenses.api"
+import {
+  apiGetExpenseCycles,
+  apiGetExpenses,
+  apiPayExpenseCycle,
+  extractErrorMessage,
+  apiCreateExpense,
+  apiUpdateExpense,
+  apiDeleteExpense,
+} from "./_lib/expenses.api"
 
 const cadenceLabel: Record<Expense["cadence"], string> = {
   monthly: "Mensile",
@@ -29,6 +38,8 @@ const cycleStatusClass: Record<string, string> = {
   late: "bg-red-100 text-red-800",
   paid: "bg-emerald-100 text-emerald-800",
 }
+
+type CycleStatus = "pending" | "late" | "paid"
 
 const formatCurrency = (amount: number, currency?: string) =>
   new Intl.NumberFormat("it-IT", {
@@ -68,15 +79,29 @@ const computeSplitPercentages = (expense: Expense): [number, number] => {
   return [50, 50]
 }
 
-type CycleStatus = "pending" | "late" | "paid"
-
-
 export default function ExpensesPage() {
   const qc = useQueryClient()
   const [query, setQuery] = useState("")
   const [onlyActive, setOnlyActive] = useState(true)
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Create/Edit UI state (devono stare DENTRO al componente)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [form, setForm] = useState({
+    name: "",
+    vendor: "",
+    category: "",
+    cadence: "monthly" as Expense["cadence"],
+    amount: 0,
+    currency: "EUR",
+    active: true,
+    next_due_date: "", // "YYYY-MM-DD"
+    tags: "",
+    notes: "",
+  })
 
   const isOpen = Boolean(selectedExpense)
 
@@ -104,7 +129,7 @@ export default function ExpensesPage() {
     })
   }, [cycles])
 
-
+  // --- Mutations: Pay cycle (già c'era) ---
   const payMutation = useMutation<unknown, Error, { cycleId: string; expenseId?: string }>({
     mutationFn: async ({ cycleId }: { cycleId: string; expenseId?: string }) => {
       setActionError(null)
@@ -113,9 +138,7 @@ export default function ExpensesPage() {
     onSuccess: async (_data: unknown, variables: { cycleId: string; expenseId?: string }) => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["expenses"] }),
-        variables.expenseId
-          ? qc.invalidateQueries({ queryKey: ["expense-cycles", variables.expenseId] })
-          : Promise.resolve(),
+        variables.expenseId ? qc.invalidateQueries({ queryKey: ["expense-cycles", variables.expenseId] }) : Promise.resolve(),
       ])
     },
     onError: (err: unknown) => {
@@ -145,7 +168,6 @@ export default function ExpensesPage() {
       )
     })
   }, [expenses, onlyActive, query])
-
 
   const totals = useMemo(() => {
     let monthly = 0
@@ -183,6 +205,127 @@ export default function ExpensesPage() {
     setActionError(null)
   }
 
+  // --- Create/Edit helpers ---
+  const openCreate = () => {
+    setFormError(null)
+    setEditingExpense(null)
+    setForm({
+      name: "",
+      vendor: "",
+      category: "",
+      cadence: "monthly",
+      amount: 0,
+      currency: "EUR",
+      active: true,
+      next_due_date: "",
+      tags: "",
+      notes: "",
+    })
+    setEditOpen(true)
+  }
+
+  const openEdit = (exp: Expense) => {
+    setFormError(null)
+    setEditingExpense(exp)
+    setForm({
+      name: exp.name ?? "",
+      vendor: exp.vendor ?? "",
+      category: exp.category ?? "",
+      cadence: exp.cadence,
+      amount: Number(exp.amount ?? 0),
+      currency: exp.currency ?? "EUR",
+      active: Boolean(exp.active),
+      next_due_date: (exp.next_due_date ?? "").slice(0, 10),
+      tags: (exp.tags ?? []).join(", "),
+      notes: exp.notes ?? "",
+    })
+    setEditOpen(true)
+  }
+
+  const closeEdit = () => {
+    setEditOpen(false)
+    setEditingExpense(null)
+    setFormError(null)
+  }
+
+  // --- Mutations: Create / Update / Delete / Toggle ---
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      setFormError(null)
+      const payload = {
+        name: form.name.trim(),
+        vendor: form.vendor.trim() || null,
+        category: form.category.trim() || null,
+        cadence: form.cadence,
+        amount: Number(form.amount),
+        currency: form.currency || "EUR",
+        active: Boolean(form.active),
+        next_due_date: form.next_due_date || null,
+        notes: form.notes.trim() || null,
+        tags: form.tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+      }
+      return apiCreateExpense(payload as any)
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["expenses"] })
+      closeEdit()
+    },
+    onError: (err: unknown) => setFormError(extractErrorMessage(err) ?? "Errore creazione"),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingExpense?.id) throw new Error("Missing expense id")
+      setFormError(null)
+      const patch = {
+        name: form.name.trim(),
+        vendor: form.vendor.trim() || null,
+        category: form.category.trim() || null,
+        cadence: form.cadence,
+        amount: Number(form.amount),
+        currency: form.currency || "EUR",
+        active: Boolean(form.active),
+        next_due_date: form.next_due_date || null,
+        notes: form.notes.trim() || null,
+        tags: form.tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+      }
+      return apiUpdateExpense(editingExpense.id, patch as any)
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["expenses"] })
+      closeEdit()
+    },
+    onError: (err: unknown) => setFormError(extractErrorMessage(err) ?? "Errore modifica"),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setFormError(null)
+      return apiDeleteExpense(id)
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["expenses"] })
+      // se avevi aperto il dettaglio di quella spesa, lo chiudi
+      closeDetail()
+    },
+    onError: (err: unknown) => setFormError(extractErrorMessage(err) ?? "Errore eliminazione"),
+  })
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: async (payload: { id: string; active: boolean }) => {
+      return apiUpdateExpense(payload.id, { active: payload.active } as any)
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["expenses"] })
+    },
+  })
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -192,10 +335,15 @@ export default function ExpensesPage() {
         </div>
 
         <div className="flex flex-wrap gap-3 items-center">
+          <Button size="sm" onClick={openCreate}>
+            Nuova spesa
+          </Button>
+
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Switch checked={onlyActive} onCheckedChange={(v: Boolean) => setOnlyActive(Boolean(v))} id="only-active" />
+            <Switch checked={onlyActive} onCheckedChange={(v: boolean) => setOnlyActive(Boolean(v))} id="only-active" />
             <label htmlFor="only-active">Mostra solo attive</label>
           </div>
+
           <Button
             variant="outline"
             size="sm"
@@ -269,7 +417,7 @@ export default function ExpensesPage() {
               placeholder="Cerca per nome, vendor, categoria, tag..."
               className="pl-10"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
             />
           </div>
         </div>
@@ -324,9 +472,21 @@ export default function ExpensesPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-2">
                   <Button variant="outline" size="sm" onClick={() => openDetail(exp)}>
                     Dettagli
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => openEdit(exp)}>
+                    Modifica
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm("Eliminare questa spesa?")) deleteMutation.mutate(exp.id)
+                    }}
+                  >
+                    Elimina
                   </Button>
                 </div>
               </div>
@@ -369,19 +529,41 @@ export default function ExpensesPage() {
                   <span className="text-sm font-medium">{cadenceLabel[exp.cadence]}</span>
                   <span className="text-sm text-muted-foreground">{formatDate(exp.next_due_date)}</span>
                   <span className="text-sm font-semibold">{formatCurrency(exp.amount, exp.currency)}</span>
-                  <span
-                    className={[
-                      "text-xs px-2 py-1 rounded-full text-center inline-flex items-center justify-center",
-                      "max-w-[110px] truncate",
-                      exp.active ? statusClass.active : statusClass.inactive,
-                    ].join(" ")}
-                    title={exp.active ? "Attiva" : "Non attiva"}
-                  >
-                    {exp.active ? "Attiva" : "Non attiva"}
-                  </span>
+
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={[
+                        "text-xs px-2 py-1 rounded-full text-center inline-flex items-center justify-center",
+                        "max-w-[110px] truncate",
+                        exp.active ? statusClass.active : statusClass.inactive,
+                      ].join(" ")}
+                      title={exp.active ? "Attiva" : "Non attiva"}
+                    >
+                      {exp.active ? "Attiva" : "Non attiva"}
+                    </span>
+
+                    <Switch
+                      checked={Boolean(exp.active)}
+                      onCheckedChange={(v: boolean) => toggleActiveMutation.mutate({ id: exp.id, active: v })}
+                      aria-label="Attiva/Disattiva"
+                    />
+                  </div>
+
                   <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => openDetail(exp)}>
                       Dettagli
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => openEdit(exp)}>
+                      Modifica
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm("Eliminare questa spesa?")) deleteMutation.mutate(exp.id)
+                      }}
+                    >
+                      Elimina
                     </Button>
                   </div>
                 </div>
@@ -391,6 +573,7 @@ export default function ExpensesPage() {
         </div>
       </GlassCard>
 
+      {/* Dialog DETTAGLI (già esistente) */}
       <Dialog
         open={isOpen}
         onOpenChange={(open: boolean) => {
@@ -446,7 +629,7 @@ export default function ExpensesPage() {
               ) : null}
 
               {actionError && (
-                <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center gap-2">
+                <div className="pl-3 pr-3 py-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center gap-2">
                   <XCircle className="w-4 h-4" />
                   <span>{actionError}</span>
                 </div>
@@ -462,9 +645,7 @@ export default function ExpensesPage() {
                   </div>
                 ) : cycles.length ? (
                   <>
-                    {!nextPending ? (
-                      <div className="p-3 text-sm text-muted-foreground">Nessun ciclo pending da pagare.</div>
-                    ) : null}
+                    {!nextPending ? <div className="p-3 text-sm text-muted-foreground">Nessun ciclo pending da pagare.</div> : null}
                     {cycles.map((cycle: ExpenseCycle) => {
                       const due = new Date(`${cycle.due_date}T00:00:00`)
                       const isLate = cycle.status === "pending" && due.getTime() < Date.now()
@@ -483,11 +664,7 @@ export default function ExpensesPage() {
                           </div>
                           <div className="flex items-center gap-3">
                             <span className={`text-xs px-2 py-1 rounded-full ${cycleStatusClass[normalizedStatus]}`}>
-                              {normalizedStatus === "late"
-                                ? "In ritardo"
-                                : normalizedStatus === "paid"
-                                  ? "Pagato"
-                                  : "Da pagare"}
+                              {normalizedStatus === "late" ? "In ritardo" : normalizedStatus === "paid" ? "Pagato" : "Da pagare"}
                             </span>
                             {cycle.paid_at ? (
                               <span className="text-xs text-muted-foreground">
@@ -514,6 +691,130 @@ export default function ExpensesPage() {
               </div>
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog CREATE/EDIT (nuovo) */}
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open: boolean) => {
+          if (!open) closeEdit()
+        }}
+      >
+        <DialogContent
+          className="w-[calc(100vw-2rem)] sm:w-full sm:max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden p-4 sm:p-6"
+          onOpenAutoFocus={(e: Event) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle>{editingExpense ? "Modifica spesa" : "Nuova spesa"}</DialogTitle>
+          </DialogHeader>
+
+          {formError ? (
+            <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center gap-2">
+              <XCircle className="w-4 h-4" />
+              <span>{formError}</span>
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
+              <label className="text-xs text-muted-foreground">Nome</label>
+              <Input value={form.name} onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, name: e.target.value }))} />
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground">Vendor</label>
+              <Input value={form.vendor} onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, vendor: e.target.value }))} />
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground">Categoria</label>
+              <Input value={form.category} onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, category: e.target.value }))} />
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground">Cadenza</label>
+              <select
+                className="w-full h-10 rounded-md border bg-background px-3 text-sm"
+                value={form.cadence}
+                onChange={(e) => setForm((p) => ({ ...p, cadence: e.target.value as Expense["cadence"] }))}
+              >
+                <option value="monthly">Mensile</option>
+                <option value="yearly">Annuale</option>
+                <option value="one_time">Una tantum</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground">Importo</label>
+              <Input
+                type="number"
+                value={form.amount}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, amount: Number(e.target.value) }))}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground">Valuta</label>
+              <Input value={form.currency} onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, currency: e.target.value }))} />
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground">Prossimo rinnovo</label>
+              <Input
+                type="date"
+                value={form.next_due_date}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, next_due_date: e.target.value }))}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="text-xs text-muted-foreground">Tag (separati da virgola)</label>
+              <Input value={form.tags} onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, tags: e.target.value }))} />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="text-xs text-muted-foreground">Note</label>
+              <textarea
+                className="w-full min-h-24 rounded-md border bg-background px-3 py-2 text-sm"
+                value={form.notes}
+                onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+              />
+            </div>
+
+            <div className="sm:col-span-2 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Switch
+                  checked={form.active}
+                  onCheckedChange={(v: boolean) => setForm((p) => ({ ...p, active: Boolean(v) }))}
+                  id="form-active"
+                />
+                <label htmlFor="form-active">Attiva</label>
+              </div>
+
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={closeEdit}>
+                  Annulla
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!form.name.trim()) return setFormError("Il nome è obbligatorio")
+                    if (editingExpense) updateMutation.mutate()
+                    else createMutation.mutate()
+                  }}
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                >
+                  {editingExpense
+                    ? updateMutation.isPending
+                      ? "Salvo..."
+                      : "Salva"
+                    : createMutation.isPending
+                      ? "Creo..."
+                      : "Crea"}
+                </Button>
+              </div>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
