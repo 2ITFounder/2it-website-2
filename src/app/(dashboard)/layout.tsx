@@ -6,6 +6,7 @@ import { ServiceWorkerRegister } from "@/src/components/ServiceWorkerRegister"
 import { PushResync } from "@/src/components/push/PushResync"
 import { createSupabaseServerClient } from "../../lib/supabase/server"
 import { Providers } from "./providers"
+import { createSupabaseRouteClient } from "@/src/lib/supabase/route"
 
 export default async function DashboardLayout({
   children,

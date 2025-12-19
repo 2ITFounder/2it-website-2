@@ -14,7 +14,10 @@ export async function apiGetExpenses(activeOnly: boolean, signal?: AbortSignal) 
 }
 
 export async function apiGetExpenseCycles(expenseId: string, signal?: AbortSignal) {
-  return apiGet<ExpenseCycle[]>(`/api/expenses/${expenseId}/cycles`, signal)
+  if (!expenseId || expenseId === "undefined" || expenseId === "null") {
+    throw new Error("Missing expense id")
+  }
+  return apiGet<ExpenseCycle[]>(`/api/expenses/${encodeURIComponent(expenseId)}/cycles`, signal)
 }
 
 export async function apiPayExpenseCycle(cycleId: string) {
@@ -35,13 +38,17 @@ export async function apiCreateExpense(payload: Partial<Expense>) {
 }
 
 export async function apiUpdateExpense(id: string, patch: Partial<Expense>) {
-  const res = await fetch(`/api/expenses/${id}`, {
+  if (!id || id === "undefined" || id === "null") {
+    throw new Error("Missing id")
+  }
+  const res = await fetch(`/api/expenses/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   })
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json?.error ?? "Errore aggiornamento spesa")
+  return json
 }
 
 export async function apiDeleteExpense(id: string) {

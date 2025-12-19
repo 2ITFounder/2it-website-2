@@ -10,6 +10,7 @@ import { Input } from "@/src/components/ui/input"
 import { Button } from "@/src/components/ui/button"
 import { Switch } from "@/src/components/ui/switch"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/src/components/ui/dialog"
+import { useQuery, type QueryFunctionContext } from "@tanstack/react-query"
 
 import { Expense, ExpenseCycle } from "@/src/lib/expenses/schema"
 import {
@@ -111,13 +112,17 @@ export default function ExpensesPage() {
   })
 
   const cyclesQuery = useQuery<ExpenseCycle[], Error>({
-    queryKey: ["expense-cycles", selectedExpense?.id],
+    queryKey: ["expense-cycles", selectedExpense?.id ?? null],
     enabled: Boolean(selectedExpense?.id),
-    queryFn: ({ signal }: { signal: AbortSignal }) => {
-      if (!selectedExpense?.id) return Promise.resolve([] as ExpenseCycle[])
-      return apiGetExpenseCycles(selectedExpense.id, signal)
+    queryFn: (
+      ctx: QueryFunctionContext<["expense-cycles", string | null]>
+    ) => {
+      const expenseId = ctx.queryKey[1]
+      if (!expenseId) return Promise.resolve([])
+      return apiGetExpenseCycles(expenseId, ctx.signal)
     },
   })
+
 
   const cycles = cyclesQuery.data ?? []
 

@@ -47,7 +47,7 @@ export async function PATCH(req: Request, ctx: RouteContext) {
   const { data, error } = await supabase
     .from("expenses")
     .update(cleaned)
-    .eq("id", id)
+    .eq("id", expenseId)
     .select(
       "id,name,vendor,category,tags,amount,currency,cadence,first_due_date,next_due_date,active,split_mode,split_custom,notes,created_by,created_at"
     )
