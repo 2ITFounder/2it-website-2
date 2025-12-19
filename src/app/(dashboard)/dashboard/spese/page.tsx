@@ -268,61 +268,82 @@ export default function ExpensesPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <div className="min-w-[1000px]">
-            <div className="grid grid-cols-[2fr,1.2fr,1fr,1fr,1fr,1fr,1fr,1fr] px-4 py-3 text-xs uppercase text-muted-foreground tracking-wide bg-muted/40">
-              <span>Nome</span>
-              <span>Vendor</span>
-              <span>Categoria</span>
-              <span>Cadenza</span>
-              <span>Prossimo rinnovo</span>
-              <span>Importo</span>
-              <span>Stato</span>
-              <span>Azioni</span>
-            </div>
-
-            {expensesQuery.isLoading ? (
-              <div className="p-4 text-muted-foreground text-sm">Caricamento...</div>
-            ) : visibleExpenses.length === 0 ? (
-              <div className="p-4 text-muted-foreground text-sm">Nessuna spesa trovata.</div>
-            ) : (
-              visibleExpenses.map((exp) => (
-                <div
-                  key={exp.id}
-                  className="grid grid-cols-[2fr,1.2fr,1fr,1fr,1fr,1fr,1fr,1fr] px-4 py-3 items-center border-t border-border/50 hover:bg-muted/30 transition"
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium">{exp.name}</span>
+        {/* MOBILE: cards */}
+        <div className="md:hidden divide-y">
+          {expensesQuery.isLoading ? (
+            <div className="p-4 text-muted-foreground text-sm">Caricamento...</div>
+          ) : visibleExpenses.length === 0 ? (
+            <div className="p-4 text-muted-foreground text-sm">Nessuna spesa trovata.</div>
+          ) : (
+            visibleExpenses.map((exp) => (
+              <div key={exp.id} className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{exp.name}</p>
+                    <p className="text-sm text-muted-foreground truncate">{exp.vendor || "-"}</p>
                     {exp.tags?.length ? (
-                      <span className="text-xs text-muted-foreground truncate">Tag: {exp.tags.join(", ")}</span>
+                      <p className="text-xs text-muted-foreground truncate">Tag: {exp.tags.join(", ")}</p>
                     ) : null}
                   </div>
-                  <span className="text-sm text-muted-foreground">{exp.vendor || "-"}</span>
-                  <span className="text-sm text-muted-foreground">{exp.category || "-"}</span>
-                  <span className="text-sm font-medium">{cadenceLabel[exp.cadence]}</span>
-                  <span className="text-sm text-muted-foreground">{formatDate(exp.next_due_date)}</span>
-                  <span className="text-sm font-semibold">{formatCurrency(exp.amount, exp.currency)}</span>
+
+                  {/* Stato: piccolo, non espande */}
                   <span
-                    className={`text-xs px-2 py-1 rounded-full text-center ${
-                      exp.active ? statusClass.active : statusClass.inactive
-                    }`}
+                    className={[
+                      "shrink-0 inline-flex items-center justify-center",
+                      "px-2 py-0.5 rounded-full text-[11px] font-medium",
+                      "max-w-[90px] truncate",
+                      exp.active ? statusClass.active : statusClass.inactive,
+                    ].join(" ")}
+                    title={exp.active ? "Attiva" : "Non attiva"}
                   >
                     {exp.active ? "Attiva" : "Non attiva"}
                   </span>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => openDetail(exp)}>
-                      Dettagli
-                    </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Categoria</p>
+                    <p className="truncate">{exp.category || "-"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Cadenza</p>
+                    <p className="truncate">{cadenceLabel[exp.cadence]}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Prossimo rinnovo</p>
+                    <p className="truncate">{formatDate(exp.next_due_date)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Importo</p>
+                    <p className="font-semibold truncate">{formatCurrency(exp.amount, exp.currency)}</p>
                   </div>
                 </div>
-              ))
-            )}
+
+                <div className="flex justify-end">
+                  <Button variant="outline" size="sm" onClick={() => openDetail(exp)}>
+                    Dettagli
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* DESKTOP: tabella */}
+        <div className="hidden md:block overflow-x-auto">
+          <div className="min-w-[1000px]">
+            {/* qui lasci IDENTICA la tua griglia attuale */}
+            ...
           </div>
         </div>
       </GlassCard>
 
       <Dialog open={detailOpen} onOpenChange={(v) => (v ? setDetailOpen(true) : closeDetail())}>
-        <DialogContent className="max-w-4xl" aria-describedby="expense-detail-description">
+        <DialogContent
+          className="w-[calc(100vw-2rem)] sm:w-full sm:max-w-4xl max-h-[85vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6"
+          aria-describedby="expense-detail-description"
+          >
+
           <DialogHeader>
             <DialogTitle>{selectedExpense?.name ?? "Spesa"}</DialogTitle>
             <p id="expense-detail-description" className="text-sm text-muted-foreground">
