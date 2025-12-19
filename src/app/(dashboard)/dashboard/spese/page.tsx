@@ -3,14 +3,12 @@
 import { useMemo, useState } from "react"
 import type { ChangeEvent } from "react"
 import { CalendarDays, CheckCircle2, CreditCard, RefreshCw, Search, XCircle } from "lucide-react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-
+import { useMutation, useQuery, useQueryClient, type UseQueryOptions  } from "@tanstack/react-query"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { Input } from "@/src/components/ui/input"
 import { Button } from "@/src/components/ui/button"
 import { Switch } from "@/src/components/ui/switch"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/src/components/ui/dialog"
-import { useQuery, type QueryFunctionContext } from "@tanstack/react-query"
 
 import { Expense, ExpenseCycle } from "@/src/lib/expenses/schema"
 import {
@@ -41,6 +39,7 @@ const cycleStatusClass: Record<string, string> = {
 }
 
 type CycleStatus = "pending" | "late" | "paid"
+
 
 const formatCurrency = (amount: number, currency?: string) =>
   new Intl.NumberFormat("it-IT", {
@@ -112,16 +111,18 @@ export default function ExpensesPage() {
   })
 
   const cyclesQuery = useQuery<ExpenseCycle[], Error>({
-    queryKey: ["expense-cycles", selectedExpense?.id ?? null],
+    queryKey: ["expense-cycles", selectedExpense?.id ?? null] as const,
     enabled: Boolean(selectedExpense?.id),
     queryFn: (
-      ctx: QueryFunctionContext<["expense-cycles", string | null]>
+      { queryKey, signal }: { queryKey: readonly ["expense-cycles", string | null]; signal: AbortSignal }
     ) => {
-      const expenseId = ctx.queryKey[1]
-      if (!expenseId) return Promise.resolve([])
-      return apiGetExpenseCycles(expenseId, ctx.signal)
+      const expenseId = queryKey[1]
+      if (!expenseId) return Promise.resolve([] as ExpenseCycle[])
+      return apiGetExpenseCycles(expenseId, signal)
     },
   })
+
+
 
 
   const cycles = cyclesQuery.data ?? []
