@@ -23,6 +23,7 @@ export const ExpenseCreateSchema = z.object({
 
 export const ExpenseUpdateSchema = ExpenseCreateSchema.partial().extend({
   id: z.string().uuid(),
+  next_due_date: isoDateString.optional(),
 })
 
 export type ExpenseCadence = z.infer<typeof ExpenseCadenceEnum>

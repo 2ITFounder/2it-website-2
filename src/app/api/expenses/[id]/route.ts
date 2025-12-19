@@ -2,26 +2,22 @@ import { NextResponse } from "next/server"
 import { createSupabaseRouteClient } from "@/src/lib/supabase/route"
 import { ExpenseUpdateSchema } from "@/src/lib/expenses/schema"
 
-type RouteContext = {
-  params: { id: string }
-}
+type Params = { id?: string }
 
-export async function PATCH(req: Request, ctx: RouteContext) {
+export async function PATCH(req: Request, { params }: { params: Params }) {
   const supabase = await createSupabaseRouteClient()
   const { data: auth } = await supabase.auth.getUser()
   if (!auth?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const expenseId = ctx.params?.id
+  const expenseId = params?.id
   if (!expenseId) return NextResponse.json({ error: "Missing id" }, { status: 400 })
 
   const body = await req.json().catch(() => null)
   const parsed = ExpenseUpdateSchema.safeParse({ ...(body || {}), id: expenseId })
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
-  const { id, ...updates } = parsed.data
-  const cleaned: Record<string, any> = {
-    ...updates,
-  }
+  const { id: _id, ...updates } = parsed.data
+  const cleaned: Record<string, unknown> = { ...updates }
 
   if (cleaned.vendor === "") cleaned.vendor = null
   if (cleaned.category === "") cleaned.category = null
@@ -36,9 +32,7 @@ export async function PATCH(req: Request, ctx: RouteContext) {
     cleaned.split_mode = "custom"
   }
 
-  Object.keys(cleaned).forEach((key) => {
-    if (cleaned[key] === undefined) delete cleaned[key]
-  })
+  Object.keys(cleaned).forEach((k) => cleaned[k] === undefined && delete cleaned[k])
 
   if (Object.keys(cleaned).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 })
@@ -47,7 +41,7 @@ export async function PATCH(req: Request, ctx: RouteContext) {
   const { data, error } = await supabase
     .from("expenses")
     .update(cleaned)
-    .eq("id", expenseId)
+    .eq("id", expenseId) // usa SEMPRE params
     .select(
       "id,name,vendor,category,tags,amount,currency,cadence,first_due_date,next_due_date,active,split_mode,split_custom,notes,created_by,created_at"
     )
@@ -57,12 +51,12 @@ export async function PATCH(req: Request, ctx: RouteContext) {
   return NextResponse.json({ data })
 }
 
-export async function DELETE(_req: Request, ctx: RouteContext) {
+export async function DELETE(_req: Request, { params }: { params: Params }) {
   const supabase = await createSupabaseRouteClient()
   const { data: auth } = await supabase.auth.getUser()
   if (!auth?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const expenseId = ctx.params?.id
+  const expenseId = params?.id
   if (!expenseId) return NextResponse.json({ error: "Missing id" }, { status: 400 })
 
   const { error } = await supabase.from("expenses").delete().eq("id", expenseId)
