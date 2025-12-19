@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server"
 import { createSupabaseRouteClient } from "@/src/lib/supabase/route"
 
-type Params = { id?: string }
+type Params = { id: string } // Togli il ? opzionale, l'id c'è sempre nella rotta
 
-export async function GET(req: Request, { params }: { params: Params }) {
+export async function GET(
+  req: Request,
+  // 1. Modifica qui: params è una Promise
+  { params }: { params: Promise<Params> }
+) {
   const supabase = await createSupabaseRouteClient()
   const { data: auth } = await supabase.auth.getUser()
   if (!auth?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const expenseId = params?.id
+  // 2. Modifica qui: devi fare AWAIT di params
+  const { id: expenseId } = await params
+
   if (!expenseId) return NextResponse.json({ error: "Missing expense id" }, { status: 400 })
 
   const { data, error } = await supabase
