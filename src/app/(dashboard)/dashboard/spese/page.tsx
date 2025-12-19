@@ -120,7 +120,7 @@ export default function ExpensesPage() {
       if (!expenseId) return []
       return apiGetExpenseCycles(expenseId, signal)
     },
-    initialData: [] as ExpenseCycle[],
+    placeholderData: [],
   })
 
   const cycles = cyclesQuery.data ?? []
@@ -641,7 +641,7 @@ export default function ExpensesPage() {
 
               <div className="border rounded-lg divide-y">
                 <div className="px-3 py-2 bg-muted/40 font-semibold text-sm">Cicli di pagamento</div>
-                {cyclesQuery.isLoading ? (
+                {cyclesQuery.isFetching ? (
                   <div className="p-4 text-sm text-muted-foreground">Caricamento cicli...</div>
                 ) : cyclesQuery.error ? (
                   <div className="p-4 text-sm text-destructive">
