@@ -10,13 +10,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // 1) params (Next 15: è già stato awaitato sopra)
+  // 1) params
   let cycleId: string | undefined = paramId
 
   // 2) query
   if (!cycleId) cycleId = req.nextUrl.searchParams.get("id") ?? undefined
 
-  // 3) parse pathname: /api/expense-cycles/<id>/pay  => <id> è il penultimo segmento
+  // 3) parse pathname: /api/expense-cycles/<id>/pay
   if (!cycleId) {
     const parts = req.nextUrl.pathname.split("/").filter(Boolean)
     const payIdx = parts.lastIndexOf("pay")
@@ -33,24 +33,31 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   if (!cycleId) {
     return NextResponse.json(
-      {
-        error: "Missing id",
-        debug: { paramId, pathname: req.nextUrl.pathname, url: req.url },
-      },
+      { error: "Missing id", debug: { paramId, pathname: req.nextUrl.pathname, url: req.url } },
       { status: 400 }
     )
   }
 
-  const { data, error } = await supabase.rpc("pay_expense_cycle", { p_cycle_id: cycleId }).single()
+  // ✅ UNA SOLA RPC + debug completo
+  const rpcRes = await supabase.rpc("pay_expense_cycle", { p_cycle_id: cycleId })
 
-  if (error) {
-    const msg = error.message || "Errore pagamento ciclo"
+  if (rpcRes.error) {
+    const msg = rpcRes.error.message || "Errore pagamento ciclo"
     const normalized = msg.toLowerCase()
-    if (normalized.includes("already paid")) return NextResponse.json({ error: msg }, { status: 409 })
-    if (normalized.includes("not authorized")) return NextResponse.json({ error: msg }, { status: 403 })
-    if (normalized.includes("not found")) return NextResponse.json({ error: msg }, { status: 404 })
-    return NextResponse.json({ error: msg }, { status: 400 })
+
+    // se vuoi mantenere mapping status:
+    if (normalized.includes("already paid")) {
+      return NextResponse.json({ error: msg, debug: rpcRes.error }, { status: 409 })
+    }
+    if (normalized.includes("not authorized")) {
+      return NextResponse.json({ error: msg, debug: rpcRes.error }, { status: 403 })
+    }
+    if (normalized.includes("not found")) {
+      return NextResponse.json({ error: msg, debug: rpcRes.error }, { status: 404 })
+    }
+
+    return NextResponse.json({ error: msg, debug: rpcRes.error }, { status: 400 })
   }
 
-  return NextResponse.json({ data })
+  return NextResponse.json({ data: rpcRes.data })
 }
