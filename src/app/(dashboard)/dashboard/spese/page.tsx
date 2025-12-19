@@ -107,23 +107,21 @@ export default function ExpensesPage() {
 
   const expensesQuery = useQuery<Expense[], Error>({
     queryKey: ["expenses", { active: onlyActive }],
-    queryFn: ({ signal }: { signal: AbortSignal }) => apiGetExpenses(onlyActive, signal),
+    queryFn: ({ signal }) => apiGetExpenses(onlyActive, signal),
   })
+
+  const cyclesKey = ["expense-cycles", selectedExpense?.id ?? null] as const
 
   const cyclesQuery = useQuery<ExpenseCycle[], Error>({
-    queryKey: ["expense-cycles", selectedExpense?.id ?? null] as const,
-    enabled: Boolean(selectedExpense?.id),
-    queryFn: (
-      { queryKey, signal }: { queryKey: readonly ["expense-cycles", string | null]; signal: AbortSignal }
-    ) => {
-      const expenseId = queryKey[1]
-      if (!expenseId) return Promise.resolve([] as ExpenseCycle[])
+    queryKey: cyclesKey,
+    enabled: !!selectedExpense?.id,
+    queryFn: async ({ queryKey, signal }) => {
+      const expenseId = (queryKey[1] as string | null)
+      if (!expenseId) return []
       return apiGetExpenseCycles(expenseId, signal)
     },
+    initialData: [] as ExpenseCycle[],
   })
-
-
-
 
   const cycles = cyclesQuery.data ?? []
 
