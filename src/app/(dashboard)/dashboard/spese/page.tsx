@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import type { ChangeEvent } from "react"
 import { CalendarDays, CheckCircle2, CreditCard, RefreshCw, Search, XCircle } from "lucide-react"
-import { useMutation, useQuery, useQueryClient, type UseQueryOptions  } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { Input } from "@/src/components/ui/input"
 import { Button } from "@/src/components/ui/button"
@@ -39,7 +39,6 @@ const cycleStatusClass: Record<string, string> = {
 }
 
 type CycleStatus = "pending" | "late" | "paid"
-
 
 const formatCurrency = (amount: number, currency?: string) =>
   new Intl.NumberFormat("it-IT", {
@@ -86,7 +85,7 @@ export default function ExpensesPage() {
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  // Create/Edit UI state (devono stare DENTRO al componente)
+  // Create/Edit UI state
   const [editOpen, setEditOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
@@ -105,10 +104,15 @@ export default function ExpensesPage() {
 
   const isOpen = Boolean(selectedExpense)
 
+  // ✅ LISTA: sempre tutte (nessun filtro server-side)
   const expensesQuery = useQuery<Expense[], Error>({
-    queryKey: ["expenses", { active: onlyActive }],
-    queryFn: ({ signal }) => apiGetExpenses(onlyActive, signal),
+    queryKey: ["expenses"],
+    queryFn: ({ signal }) => apiGetExpenses(undefined, signal),
   })
+
+  const allExpenses = expensesQuery.data ?? []
+  // ✅ CALCOLI: sempre e solo attive
+  const activeExpenses = useMemo(() => allExpenses.filter((e) => e.active), [allExpenses])
 
   const cyclesKey = ["expense-cycles", selectedExpense?.id ?? null] as const
 
@@ -116,7 +120,7 @@ export default function ExpensesPage() {
     queryKey: cyclesKey,
     enabled: Boolean(selectedExpense?.id),
     queryFn: async ({ queryKey, signal }) => {
-      const expenseId = (queryKey[1] as string | null)
+      const expenseId = queryKey[1] as string | null
       if (!expenseId) return []
       return apiGetExpenseCycles(expenseId, signal)
     },
@@ -133,7 +137,7 @@ export default function ExpensesPage() {
     })
   }, [cycles])
 
-  // --- Mutations: Pay cycle (già c'era) ---
+  // --- Mutations: Pay cycle ---
   const payMutation = useMutation<unknown, Error, { cycleId: string; expenseId?: string }>({
     mutationFn: async ({ cycleId }: { cycleId: string; expenseId?: string }) => {
       setActionError(null)
@@ -156,13 +160,12 @@ export default function ExpensesPage() {
     },
   })
 
-  const expenses = expensesQuery.data ?? []
-
+  // ✅ LISTA VISIBILE: toggle solo UI (attive vs tutte)
   const visibleExpenses = useMemo<Expense[]>(() => {
-    const list: Expense[] = onlyActive ? expenses.filter((e: Expense) => e.active) : expenses
+    const base: Expense[] = onlyActive ? activeExpenses : allExpenses
     const q = query.trim().toLowerCase()
-    if (!q) return list
-    return list.filter((e: Expense) => {
+    if (!q) return base
+    return base.filter((e: Expense) => {
       const tags = (e.tags ?? []).join(" ").toLowerCase()
       return (
         e.name.toLowerCase().includes(q) ||
@@ -171,8 +174,9 @@ export default function ExpensesPage() {
         tags.includes(q)
       )
     })
-  }, [expenses, onlyActive, query])
+  }, [allExpenses, activeExpenses, onlyActive, query])
 
+  // ✅ KPI/TOTALI: sempre e solo attive (anche se stai mostrando tutte)
   const totals = useMemo(() => {
     let monthly = 0
     let annual = 0
@@ -180,7 +184,7 @@ export default function ExpensesPage() {
     let myMonthly = 0
     let colleagueMonthly = 0
 
-    for (const exp of onlyActive ? expenses.filter((e: Expense) => e.active) : expenses) {
+    for (const exp of activeExpenses) {
       const baseMonthly = computeBaseMonthly(exp)
       if (exp.cadence === "one_time") {
         oneTime += exp.amount
@@ -195,7 +199,7 @@ export default function ExpensesPage() {
     }
 
     return { monthly, annual, oneTime, myMonthly, colleagueMonthly }
-  }, [expenses, onlyActive])
+  }, [activeExpenses])
 
   const topError = extractErrorMessage(expensesQuery.error)
 
@@ -315,7 +319,6 @@ export default function ExpensesPage() {
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["expenses"] })
-      // se avevi aperto il dettaglio di quella spesa, lo chiudi
       closeDetail()
     },
     onError: (err: unknown) => setFormError(extractErrorMessage(err) ?? "Errore eliminazione"),
@@ -434,7 +437,7 @@ export default function ExpensesPage() {
             <div className="p-4 text-muted-foreground text-sm">Nessuna spesa trovata.</div>
           ) : (
             visibleExpenses.map((exp: Expense) => (
-              <div key={exp.id} className="p-4 space-y-3">
+              <div key={exp.id} className={`p-4 space-y-3 ${exp.active ? "" : "opacity-60"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium truncate">{exp.name}</p>
@@ -520,7 +523,9 @@ export default function ExpensesPage() {
               visibleExpenses.map((exp: Expense) => (
                 <div
                   key={exp.id}
-                  className="grid grid-cols-[2fr,1.2fr,1fr,1fr,1fr,1fr,1fr,1fr] px-4 py-3 items-center border-t border-border/50 hover:bg-muted/30 transition"
+                  className={`grid grid-cols-[2fr,1.2fr,1fr,1fr,1fr,1fr,1fr,1fr] px-4 py-3 items-center border-t border-border/50 hover:bg-muted/30 transition ${
+                    exp.active ? "" : "opacity-60"
+                  }`}
                 >
                   <div className="flex flex-col">
                     <span className="font-medium">{exp.name}</span>
@@ -577,7 +582,7 @@ export default function ExpensesPage() {
         </div>
       </GlassCard>
 
-      {/* Dialog DETTAGLI (già esistente) */}
+      {/* Dialog DETTAGLI */}
       <Dialog
         open={isOpen}
         onOpenChange={(open: boolean) => {
@@ -656,24 +661,17 @@ export default function ExpensesPage() {
                       const normalizedStatus: CycleStatus = (isLate ? "late" : cycle.status) as CycleStatus
                       const isNextPending = nextPending && nextPending.id === cycle.id && cycle.status === "pending"
                       return (
-                        <div
-                          key={cycle.id}
-                          className="px-3 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
-                        >
+                        <div key={cycle.id} className="px-3 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                           <div>
                             <p className="font-medium">{formatDate(cycle.due_date)}</p>
-                            <p className="text-sm text-muted-foreground">
-                              Importo: {formatCurrency(cycle.amount, selectedExpense.currency)}
-                            </p>
+                            <p className="text-sm text-muted-foreground">Importo: {formatCurrency(cycle.amount, selectedExpense.currency)}</p>
                           </div>
                           <div className="flex items-center gap-3">
                             <span className={`text-xs px-2 py-1 rounded-full ${cycleStatusClass[normalizedStatus]}`}>
                               {normalizedStatus === "late" ? "In ritardo" : normalizedStatus === "paid" ? "Pagato" : "Da pagare"}
                             </span>
                             {cycle.paid_at ? (
-                              <span className="text-xs text-muted-foreground">
-                                Pagato il {formatDate(cycle.paid_at?.slice(0, 10))}
-                              </span>
+                              <span className="text-xs text-muted-foreground">Pagato il {formatDate(cycle.paid_at?.slice(0, 10))}</span>
                             ) : null}
                             {isNextPending ? (
                               <Button
@@ -698,7 +696,7 @@ export default function ExpensesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog CREATE/EDIT (nuovo) */}
+      {/* Dialog CREATE/EDIT */}
       <Dialog
         open={editOpen}
         onOpenChange={(open: boolean) => {
@@ -751,11 +749,7 @@ export default function ExpensesPage() {
 
             <div>
               <label className="text-xs text-muted-foreground">Importo</label>
-              <Input
-                type="number"
-                value={form.amount}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, amount: Number(e.target.value) }))}
-              />
+              <Input type="number" value={form.amount} onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, amount: Number(e.target.value) }))} />
             </div>
 
             <div>
@@ -765,11 +759,7 @@ export default function ExpensesPage() {
 
             <div>
               <label className="text-xs text-muted-foreground">Prossimo rinnovo</label>
-              <Input
-                type="date"
-                value={form.next_due_date}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, next_due_date: e.target.value }))}
-              />
+              <Input type="date" value={form.next_due_date} onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, next_due_date: e.target.value }))} />
             </div>
 
             <div className="sm:col-span-2">
@@ -788,11 +778,7 @@ export default function ExpensesPage() {
 
             <div className="sm:col-span-2 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Switch
-                  checked={form.active}
-                  onCheckedChange={(v: boolean) => setForm((p) => ({ ...p, active: Boolean(v) }))}
-                  id="form-active"
-                />
+                <Switch checked={form.active} onCheckedChange={(v: boolean) => setForm((p) => ({ ...p, active: Boolean(v) }))} id="form-active" />
                 <label htmlFor="form-active">Attiva</label>
               </div>
 

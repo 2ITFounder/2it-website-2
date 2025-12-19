@@ -8,10 +8,11 @@ export function extractErrorMessage(err: any) {
   return "Si e verificato un errore"
 }
 
-export async function apiGetExpenses(activeOnly: boolean, signal?: AbortSignal) {
-  const query = activeOnly ? "?active=true" : ""
+export async function apiGetExpenses(params?: { active?: boolean }, signal?: AbortSignal) {
+  const query = params?.active === undefined ? "" : `?active=${params.active ? "true" : "false"}`
   return apiGet<Expense[]>(`/api/expenses${query}`, signal)
 }
+
 
 export async function apiGetExpenseCycles(expenseId: string, signal?: AbortSignal) {
   if (!expenseId || expenseId === "undefined" || expenseId === "null") {
