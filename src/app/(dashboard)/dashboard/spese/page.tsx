@@ -114,7 +114,7 @@ export default function ExpensesPage() {
 
   const cyclesQuery = useQuery<ExpenseCycle[], Error>({
     queryKey: cyclesKey,
-    enabled: !!selectedExpense?.id,
+    enabled: Boolean(selectedExpense?.id),
     queryFn: async ({ queryKey, signal }) => {
       const expenseId = (queryKey[1] as string | null)
       if (!expenseId) return []
