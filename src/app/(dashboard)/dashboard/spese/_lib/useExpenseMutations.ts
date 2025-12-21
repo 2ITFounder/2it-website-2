@@ -1,6 +1,8 @@
 "use client"
 
 import { useMutation, type QueryClient } from "@tanstack/react-query"
+import type { ExpenseFormState } from "./types"
+
 
 import type { Expense } from "@/src/lib/expenses/schema"
 import {
@@ -10,19 +12,6 @@ import {
   apiDeleteExpense,
   extractErrorMessage,
 } from "./expenses.api"
-
-type ExpenseFormState = {
-  name: string
-  vendor: string
-  category: string
-  cadence: Expense["cadence"]
-  amount: number
-  currency: string
-  active: boolean
-  next_due_date: string
-  tags: string
-  notes: string
-}
 
 type Params = {
   qc: QueryClient
@@ -72,14 +61,17 @@ export function useExpenseMutations({
   const createMutation = useMutation({
     mutationFn: async () => {
       setFormError(null)
+      const parsedAmount = Number(String(form.amount ?? "").replace(",", "."))
       const payload = {
         name: form.name.trim(),
         vendor: form.vendor.trim() || null,
         category: form.category.trim() || null,
         cadence: form.cadence,
-        amount: Number(form.amount),
+        amount: parsedAmount,
         currency: form.currency || "EUR",
         active: Boolean(form.active),
+        // `first_due_date` richiesto dal backend: riusiamo il valore inserito per la prossima scadenza
+        first_due_date: form.next_due_date,
         next_due_date: form.next_due_date || null,
         notes: form.notes.trim() || null,
         tags: form.tags
@@ -100,12 +92,13 @@ export function useExpenseMutations({
     mutationFn: async () => {
       if (!editingExpense?.id) throw new Error("Missing expense id")
       setFormError(null)
+      const parsedAmount = Number(String(form.amount ?? "").replace(",", "."))
       const patch = {
         name: form.name.trim(),
         vendor: form.vendor.trim() || null,
         category: form.category.trim() || null,
         cadence: form.cadence,
-        amount: Number(form.amount),
+        amount: parsedAmount,
         currency: form.currency || "EUR",
         active: Boolean(form.active),
         next_due_date: form.next_due_date || null,

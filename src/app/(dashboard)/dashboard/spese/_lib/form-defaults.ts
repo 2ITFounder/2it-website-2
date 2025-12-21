@@ -1,11 +1,11 @@
-import type { Expense } from "@/src/lib/expenses/schema"
+import type { ExpenseFormState } from "./types"
 
-export const defaultExpenseForm = {
+export const defaultExpenseForm: ExpenseFormState = {
   name: "",
   vendor: "",
   category: "",
-  cadence: "monthly" as Expense["cadence"],
-  amount: 0,
+  cadence: "monthly",
+  amount: "",
   currency: "EUR",
   active: true,
   next_due_date: "", // "YYYY-MM-DD"

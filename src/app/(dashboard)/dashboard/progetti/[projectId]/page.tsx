@@ -134,7 +134,13 @@ export default function ProjectDetailPage() {
       setCreateOpen(false)
       setNewTitle("")
       setNewWeight("1")
-      await qc.invalidateQueries({ queryKey: ["tasks", projectId] })
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
+        qc.invalidateQueries({ queryKey: ["project", projectId] }),
+        qc.invalidateQueries({ queryKey: ["projects"] }),
+        qc.invalidateQueries({ queryKey: ["dashboardSummary"] }),
+        qc.invalidateQueries({ queryKey: ["reports", "projects"] }),
+      ])
     } catch (e: any) {
       setError(e?.message || "Errore di rete")
     } finally {
@@ -159,6 +165,13 @@ export default function ProjectDetailPage() {
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? "Errore update task")
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
+        qc.invalidateQueries({ queryKey: ["project", projectId] }),
+        qc.invalidateQueries({ queryKey: ["projects"] }),
+        qc.invalidateQueries({ queryKey: ["dashboardSummary"] }),
+        qc.invalidateQueries({ queryKey: ["reports", "projects"] }),
+      ])
     } catch (e: any) {
       setError(e?.message || "Errore di rete")
       await qc.invalidateQueries({ queryKey: ["tasks", projectId] })
@@ -188,7 +201,13 @@ export default function ProjectDetailPage() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? "Errore move task")
 
-      await qc.invalidateQueries({ queryKey: ["tasks", projectId] })
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
+        qc.invalidateQueries({ queryKey: ["project", projectId] }),
+        qc.invalidateQueries({ queryKey: ["projects"] }),
+        qc.invalidateQueries({ queryKey: ["dashboardSummary"] }),
+        qc.invalidateQueries({ queryKey: ["reports", "projects"] }),
+      ])
     } catch (e: any) {
       setError(e?.message || "Errore di rete")
       if (snapshot) qc.setQueryData(["tasks", projectId], snapshot)
@@ -212,7 +231,13 @@ export default function ProjectDetailPage() {
 
       setDeleteOpen(false)
       setDeleteTarget(null)
-      await qc.invalidateQueries({ queryKey: ["tasks", projectId] })
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
+        qc.invalidateQueries({ queryKey: ["project", projectId] }),
+        qc.invalidateQueries({ queryKey: ["projects"] }),
+        qc.invalidateQueries({ queryKey: ["dashboardSummary"] }),
+        qc.invalidateQueries({ queryKey: ["reports", "projects"] }),
+      ])
     } catch (e: any) {
       setError(e?.message || "Errore di rete")
     } finally {

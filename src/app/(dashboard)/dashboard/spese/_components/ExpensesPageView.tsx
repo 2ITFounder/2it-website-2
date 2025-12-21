@@ -7,6 +7,8 @@ import { ExpenseDetailDialog } from "./ExpenseDetailDialog"
 import { ExpenseListCard } from "./ExpenseListCard"
 import { ExpensesHeader } from "./ExpensesHeader"
 import { ExpensesStatsGrid } from "./ExpensesStatsGrid"
+import type { ExpenseFormState, Totals } from "../_lib/types"
+
 
 type ExpensesQueryShape = {
   isLoading: boolean
@@ -39,26 +41,6 @@ type ToggleActiveMutationShape = {
   mutate: (args: { id: string; active: boolean }) => void
 }
 
-type Totals = {
-  monthly: number
-  annual: number
-  oneTime: number
-  myMonthly: number
-  colleagueMonthly: number
-}
-
-type ExpenseFormState = {
-  name: string
-  vendor: string
-  category: string
-  cadence: Expense["cadence"]
-  amount: number
-  currency: string
-  active: boolean
-  next_due_date: string
-  tags: string
-  notes: string
-}
 
 type Props = {
   // header

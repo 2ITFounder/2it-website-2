@@ -101,7 +101,11 @@ export default function ProgettiDashboardPage() {
       status: payload.status,
       due_date: payload.due_date,
     })
-    await qc.invalidateQueries({ queryKey: ["projects"] })
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["projects"] }),
+      qc.invalidateQueries({ queryKey: ["dashboardSummary"] }),
+      qc.invalidateQueries({ queryKey: ["reports", "projects"] }),
+    ])
   }
 
   const handleEditOpen = (p: ProjectRow) => {
@@ -126,7 +130,11 @@ export default function ProgettiDashboardPage() {
       status: args.payload.status,
       due_date: args.payload.due_date,
     })
-    await qc.invalidateQueries({ queryKey: ["projects"] })
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["projects"] }),
+      qc.invalidateQueries({ queryKey: ["dashboardSummary"] }),
+      qc.invalidateQueries({ queryKey: ["reports", "projects"] }),
+    ])
   }
 
   const handleAskDelete = (p: ProjectRow) => {
@@ -136,7 +144,11 @@ export default function ProgettiDashboardPage() {
 
   const handleDelete = async (id: string) => {
     await apiDeleteProject(id)
-    await qc.invalidateQueries({ queryKey: ["projects"] })
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["projects"] }),
+      qc.invalidateQueries({ queryKey: ["dashboardSummary"] }),
+      qc.invalidateQueries({ queryKey: ["reports", "projects"] }),
+    ])
   }
 
   const openDetail = (p: ProjectRow) => {

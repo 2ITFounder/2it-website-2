@@ -3,23 +3,12 @@
 import { useState } from "react"
 import type { Expense } from "@/src/lib/expenses/schema"
 import { defaultExpenseForm } from "./form-defaults"
+import type { ExpenseFormState } from "./types"
 
-type ExpenseFormState = {
-  name: string
-  vendor: string
-  category: string
-  cadence: Expense["cadence"]
-  amount: number
-  currency: string
-  active: boolean
-  next_due_date: string
-  tags: string
-  notes: string
-}
 
 export function useExpenseUIState() {
   const [query, setQuery] = useState("")
-  const [onlyActive, setOnlyActive] = useState(true)
+  const [onlyActive, setOnlyActive] = useState(false)
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -57,7 +46,7 @@ export function useExpenseUIState() {
       vendor: exp.vendor ?? "",
       category: exp.category ?? "",
       cadence: exp.cadence,
-      amount: Number(exp.amount ?? 0),
+      amount: exp.amount != null ? String(exp.amount) : "",
       currency: exp.currency ?? "EUR",
       active: Boolean(exp.active),
       next_due_date: (exp.next_due_date ?? "").slice(0, 10),

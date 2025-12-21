@@ -5,6 +5,9 @@ import { Users, FolderKanban, CheckCircle2, ListTodo, ArrowUpRight } from "lucid
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { useQuery } from "@tanstack/react-query"
 import { apiGet } from "@/src/lib/api"
+import { computeBaseMonthly } from "@/src/app/(dashboard)/dashboard/spese/_lib/expense-math"
+import { formatCurrency } from "@/src/app/(dashboard)/dashboard/spese/_lib/formatters"
+import type { Expense } from "@/src/lib/expenses/schema"
 
 type DashboardSummaryData = {
   kpi: {
@@ -36,6 +39,15 @@ export default function DashboardPage() {
     queryFn: ({ signal }) => apiGet<DashboardSummaryData>("/api/dashboard/summary", signal),
   })
 
+  const {
+    data: expenses = [],
+    isLoading: expensesLoading,
+    error: expensesError,
+  } = useQuery({
+    queryKey: ["expenses", "summary"],
+    queryFn: ({ signal }) => apiGet<Expense[]>("/api/expenses", signal),
+  })
+
   const kpi = data?.kpi ?? {
     clientsTotal: 0,
     projectsActive: 0,
@@ -43,7 +55,7 @@ export default function DashboardPage() {
     tasksDoing: 0,
   }
   const recentProjects = data?.recentProjects ?? []
-  const errorMsg = extractErrorMessage(error)
+  const errorMsg = extractErrorMessage(error) || extractErrorMessage(expensesError)
 
   const stats = useMemo(
     () => [
@@ -54,6 +66,28 @@ export default function DashboardPage() {
     ],
     [kpi]
   )
+
+  const expensesSummary = useMemo(() => {
+    let active = 0
+    let inactive = 0
+    let monthly = 0
+    let annual = 0
+
+    for (const exp of expenses) {
+      if (exp.active) {
+        active += 1
+        const baseMonthly = computeBaseMonthly(exp)
+        monthly += baseMonthly
+        if (exp.cadence !== "one_time") {
+          annual += baseMonthly * 12
+        }
+      } else {
+        inactive += 1
+      }
+    }
+
+    return { active, inactive, monthly, annual }
+  }, [expenses])
 
   return (
     <div className="space-y-8">
@@ -78,6 +112,27 @@ export default function DashboardPage() {
           </GlassCard>
         ))}
       </div>
+
+      <GlassCard>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <p className="text-sm text-muted-foreground">Spese</p>
+            <p className="text-lg font-semibold">
+              {expensesLoading ? "..." : `${expensesSummary.active} attive / ${expensesSummary.inactive} non attive`}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Mensile (attive)</p>
+            <p className="text-xl font-bold">
+              {expensesLoading ? "..." : formatCurrency(expensesSummary.monthly)}
+            </p>
+            <p className="text-xs text-muted-foreground">Annuale (attive)</p>
+            <p className="text-sm font-semibold">
+              {expensesLoading ? "..." : formatCurrency(expensesSummary.annual)}
+            </p>
+          </div>
+        </div>
+      </GlassCard>
 
       <GlassCard>
         <h2 className="text-lg font-semibold mb-6">Progetti Recenti</h2>

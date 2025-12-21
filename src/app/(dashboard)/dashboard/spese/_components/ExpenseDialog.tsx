@@ -6,19 +6,7 @@ import { Button } from "@/src/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/src/components/ui/dialog"
 import { Input } from "@/src/components/ui/input"
 import { Switch } from "@/src/components/ui/switch"
-
-type ExpenseFormState = {
-  name: string
-  vendor: string
-  category: string
-  cadence: Expense["cadence"]
-  amount: number
-  currency: string
-  active: boolean
-  next_due_date: string
-  tags: string
-  notes: string
-}
+import type { ExpenseFormState } from "../_lib/types"
 
 
 type Props = {
@@ -103,9 +91,15 @@ export function ExpenseDialog({
           <div>
             <label className="text-xs text-muted-foreground">Importo</label>
             <Input
-              type="number"
+              inputMode="decimal"
+              pattern="[0-9]*[.,]?[0-9]*"
               value={form.amount}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, amount: Number(e.target.value) }))}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                const raw = e.target.value
+                if (raw === "" || /^[0-9]*[.,]?[0-9]*$/.test(raw)) {
+                  setForm((p) => ({ ...p, amount: raw }))
+                }
+              }}
             />
           </div>
 

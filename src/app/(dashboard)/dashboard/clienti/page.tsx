@@ -5,9 +5,10 @@ import { Button } from "@/src/components/ui/button"
 import { Input } from "@/src/components/ui/input"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { useMemo, useState, ReactNode } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useClients } from "@/src/hooks/useClients"
 import Link from "next/link"
+import { apiGet } from "@/src/lib/api"
 
 // ⬇️ shadcn dialog + label
 import {
@@ -78,6 +79,20 @@ export default function ClientiPage() {
   const clients: ClientRow[] = useMemo(() => (Array.isArray(data) ? (data as ClientRow[]) : []), [data])
   const loading = isLoading
   const queryErrorMsg = extractErrorMessage(error)
+
+  // Report clients (per conteggio progetti)
+  const { data: clientReports = [] } = useQuery({
+    queryKey: ["reports", "clients", "for-clients-page"],
+    queryFn: ({ signal }) => apiGet<{ id: string; projectsTotal: number }[]>("/api/reports/clients", signal),
+  })
+
+  const projectsCountByClient = useMemo(() => {
+    const map = new Map<string, number>()
+    clientReports.forEach((r) => {
+      if (r?.id) map.set(r.id, r.projectsTotal ?? 0)
+    })
+    return map
+  }, [clientReports])
 
   // modal state
   const [open, setOpen] = useState(false)
@@ -518,11 +533,12 @@ export default function ClientiPage() {
               ) : (
                 rows.map((client) => {
                   const isActive = client.status === "ATTIVO" || client.status === "Attivo"
+                  const projectsCount = projectsCountByClient.get(client.id) ?? 0
                   return (
                     <tr key={client.id} className="border-b last:border-0 hover:bg-muted/30">
                       <td className="p-4 font-medium">{client.name}</td>
                       <td className="p-4 text-muted-foreground">{client.email ?? "—"}</td>
-                      <td className="p-4">0</td>
+                      <td className="p-4">{projectsCount}</td>
                       <td className="p-4">
                         <span
                           className={`text-xs px-2 py-1 rounded-full ${
