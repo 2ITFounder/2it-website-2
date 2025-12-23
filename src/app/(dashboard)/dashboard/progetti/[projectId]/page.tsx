@@ -1,74 +1,21 @@
-"use client"
+﻿"use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { ArrowLeft, Plus, ChevronUp, ChevronDown, Trash2 } from "lucide-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiGet } from "@/src/lib/api"
 
-import { Button } from "@/src/components/ui/button"
-import { Input } from "@/src/components/ui/input"
-import { Textarea } from "@/src/components/ui/textarea"
-import { GlassCard } from "@/src/components/ui-custom/glass-card"
-import { Label } from "@/src/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/src/components/ui/dialog"
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from "@/src/components/ui/alert-dialog"
+import { clamp } from "../_lib/ui"
+import { extractErrorMessage } from "../_lib/errors"
+import type { Project, Task, TaskPatch } from "../_lib/types"
+import type { ProjectRow } from "../_lib/projects.types"
+import { createTaskAction, patchTaskAction, moveTaskAction, deleteTaskAction } from "../_lib/task-actions"
 
-type ProjectStatus = "LEAD" | "IN_CORSO" | "IN_REVISIONE" | "COMPLETATO" | "IN_PAUSA" | "ANNULLATO"
-type TaskStatus = "TODO" | "DOING" | "DONE"
-
-type Project = {
-  id: string
-  title: string
-  description: string | null
-  status: ProjectStatus
-  progress: number
-  due_date: string | null
-}
-
-type Task = {
-  id: string
-  project_id: string
-  title: string
-  description: string | null
-  status: TaskStatus
-  priority: number
-  weight: number
-  due_date: string | null
-  position: number
-}
-
-function clamp(n: number) {
-  return Math.max(0, Math.min(100, n))
-}
-
-function taskStatusPill(status: TaskStatus) {
-  if (status === "DONE") return "bg-green-100 text-green-700"
-  if (status === "DOING") return "bg-blue-100 text-blue-700"
-  return "bg-gray-100 text-gray-700"
-}
-
-function taskBorder(status: TaskStatus) {
-  if (status === "DONE") return "border-green-200"
-  if (status === "DOING") return "border-blue-200"
-  return "border-gray-200"
-}
-
-const extractErrorMessage = (err: any) => {
-  if (!err) return null
-  if (typeof err === "string") return err
-  if (typeof err?.message === "string") return err.message
-  return "Si è verificato un errore"
-}
+import { ProjectHeader } from "../../../../../components/projects/project-detail/ProjectHeader"
+import { ProgressCard } from "../../../../../components/projects/project-detail/ProgressCard"
+import { TasksCard } from "../../../../../components/projects/project-detail/TasksCard"
+import { CreateTaskDialog } from "../../../../../components/projects/project-detail/CreateTaskDialog"
+import { DeleteTaskDialog } from "../../../../../components/projects/project-detail/DeleteTaskDialog"
 
 export default function ProjectDetailPage() {
   const params = useParams<{ projectId: string }>()
@@ -110,6 +57,16 @@ export default function ProjectDetailPage() {
     return total <= 0 ? 0 : clamp(Math.round((done / total) * 100))
   }, [tasks])
 
+  useEffect(() => {
+    if (!projectId || tasksLoading) return
+    qc.setQueryData<ProjectRow[]>(["projects"], (prev) =>
+      (prev ?? []).map((p) => (p.id === projectId ? { ...p, progress: computedProgress } : p))
+    )
+    qc.setQueryData<Project | undefined>(["project", projectId], (prev) =>
+      prev ? { ...prev, progress: computedProgress } : prev
+    )
+  }, [projectId, tasksLoading, computedProgress, qc])
+
   const createTask = async () => {
     if (!newTitle.trim()) return
     setCreating(true)
@@ -117,102 +74,39 @@ export default function ProjectDetailPage() {
 
     try {
       const weightNumber = Math.min(100, Math.max(1, parseInt(newWeight || "1", 10)))
-
-      const res = await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          project_id: projectId,
-          title: newTitle.trim(),
-          weight: weightNumber,
-        }),
+      await createTaskAction({
+        projectId,
+        title: newTitle.trim(),
+        weight: weightNumber,
+        qc,
       })
-
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? "Errore creazione task")
-
       setCreateOpen(false)
       setNewTitle("")
       setNewWeight("1")
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
-        qc.invalidateQueries({ queryKey: ["project", projectId] }),
-        qc.invalidateQueries({ queryKey: ["projects"] }),
-        qc.invalidateQueries({ queryKey: ["dashboardSummary"] }),
-        qc.invalidateQueries({ queryKey: ["reports", "projects"] }),
-      ])
-    } catch (e: any) {
-      setError(e?.message || "Errore di rete")
+    } catch (e: unknown) {
+      setError(extractErrorMessage(e) ?? "Errore di rete")
     } finally {
       setCreating(false)
     }
   }
 
-
-  type TaskPatch = Partial<Pick<Task, "title" | "status" | "weight" | "due_date" | "priority">>
-
-  const patchTask = async (id: string, payload: TaskPatch) => {
-    qc.setQueryData<Task[]>(["tasks", projectId], (prev) => {
-      if (!prev) return prev
-      return prev.map((t) => (t.id === id ? { ...t, ...payload } : t))
+  const patchTask = (id: string, payload: TaskPatch) =>
+    patchTaskAction({
+      projectId,
+      id,
+      payload,
+      qc,
+      setError: (msg) => setError(msg),
     })
 
-    try {
-      const res = await fetch("/api/tasks", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, ...payload }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? "Errore update task")
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
-        qc.invalidateQueries({ queryKey: ["project", projectId] }),
-        qc.invalidateQueries({ queryKey: ["projects"] }),
-        qc.invalidateQueries({ queryKey: ["dashboardSummary"] }),
-        qc.invalidateQueries({ queryKey: ["reports", "projects"] }),
-      ])
-    } catch (e: any) {
-      setError(e?.message || "Errore di rete")
-      await qc.invalidateQueries({ queryKey: ["tasks", projectId] })
-    }
-  }
-
-  const moveTask = async (id: string, dir: "UP" | "DOWN") => {
-    const snapshot = qc.getQueryData<Task[]>(["tasks", projectId])
-
-    qc.setQueryData<Task[]>(["tasks", projectId], (prev) => {
-      if (!prev) return prev
-      const i = prev.findIndex((t) => t.id === id)
-      if (i === -1) return prev
-      const j = dir === "UP" ? i - 1 : i + 1
-      if (j < 0 || j >= prev.length) return prev
-      const next = [...prev]
-      ;[next[i], next[j]] = [next[j], next[i]]
-      return next
+  const moveTask = (id: string, dir: "UP" | "DOWN") =>
+    moveTaskAction({
+      projectId,
+      id,
+      dir,
+      qc,
+      setError: (msg) => setError(msg),
     })
-
-    try {
-      const res = await fetch("/api/tasks", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, move: dir }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? "Errore move task")
-
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
-        qc.invalidateQueries({ queryKey: ["project", projectId] }),
-        qc.invalidateQueries({ queryKey: ["projects"] }),
-        qc.invalidateQueries({ queryKey: ["dashboardSummary"] }),
-        qc.invalidateQueries({ queryKey: ["reports", "projects"] }),
-      ])
-    } catch (e: any) {
-      setError(e?.message || "Errore di rete")
-      if (snapshot) qc.setQueryData(["tasks", projectId], snapshot)
-    }
-  }
 
   const askDelete = (t: Task) => {
     setDeleteTarget({ id: t.id, title: t.title })
@@ -225,21 +119,11 @@ export default function ProjectDetailPage() {
     setError(null)
 
     try {
-      const res = await fetch(`/api/tasks?id=${encodeURIComponent(deleteTarget.id)}`, { method: "DELETE" })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json?.error || "Errore delete task")
-
+      await deleteTaskAction({ projectId, taskId: deleteTarget.id, qc })
       setDeleteOpen(false)
       setDeleteTarget(null)
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
-        qc.invalidateQueries({ queryKey: ["project", projectId] }),
-        qc.invalidateQueries({ queryKey: ["projects"] }),
-        qc.invalidateQueries({ queryKey: ["dashboardSummary"] }),
-        qc.invalidateQueries({ queryKey: ["reports", "projects"] }),
-      ])
-    } catch (e: any) {
-      setError(e?.message || "Errore di rete")
+    } catch (e: unknown) {
+      setError(extractErrorMessage(e) ?? "Errore di rete")
     } finally {
       setDeleting(false)
     }
@@ -249,200 +133,46 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="icon" onClick={() => router.push("/dashboard/progetti")}>
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-
-          <div>
-            <h1 className="text-2xl font-bold">{project?.title ?? "Progetto"}</h1>
-            <p className="text-muted-foreground">
-              Progresso calcolato da task: <span className="font-medium">{computedProgress}%</span>
-            </p>
-          </div>
-        </div>
-
-        <Button className="glow-button" onClick={() => setCreateOpen(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Nuova task
-        </Button>
-      </div>
+      <ProjectHeader
+        title={project?.title ?? "Progetto"}
+        computedProgress={computedProgress}
+        onBack={() => router.push("/dashboard/progetti")}
+        onCreate={() => setCreateOpen(true)}
+      />
 
       {topError && <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">{topError}</div>}
 
-      <GlassCard>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span>Completamento</span>
-            <span className="font-medium">{computedProgress}%</span>
-          </div>
-          <div className="h-2 bg-muted rounded-full overflow-hidden">
-            <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${computedProgress}%` }} />
-          </div>
-        </div>
-      </GlassCard>
+      <ProgressCard computedProgress={computedProgress} />
 
-      <GlassCard>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold">Task</h2>
-          <p className="text-sm text-muted-foreground">{tasks.length} totali</p>
-        </div>
+      <TasksCard
+        tasks={tasks}
+        projectId={projectId}
+        qc={qc}
+        weightDrafts={weightDrafts}
+        setWeightDrafts={setWeightDrafts}
+        onPatch={patchTask}
+        onMove={moveTask}
+        onAskDelete={askDelete}
+      />
 
-        {tasks.length === 0 ? (
-          <div className="text-muted-foreground text-sm">Nessuna task. Creane una per iniziare.</div>
-        ) : (
-          <div className="space-y-3">
-            {tasks.map((t, idx) => (
-              <div key={t.id} className={`rounded-lg border p-3 ${taskBorder(t.status)}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <Textarea
-                      rows={2}
-                      value={t.title}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        qc.setQueryData<Task[]>(["tasks", projectId], (prev) =>
-                          (prev ?? []).map((x) => (x.id === t.id ? { ...x, title: v } : x))
-                        )
-                      }}
-                      onBlur={(e) => patchTask(t.id, { title: e.target.value })}
-                      className="font-medium leading-snug break-words whitespace-pre-wrap resize-none min-h-[52px]"
-                    />
+      <CreateTaskDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        creating={creating}
+        newTitle={newTitle}
+        setNewTitle={setNewTitle}
+        newWeight={newWeight}
+        setNewWeight={setNewWeight}
+        onCreate={createTask}
+      />
 
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-6 gap-3">
-                      <div className="space-y-1 sm:col-span-3">
-                        <Label>Status</Label>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs px-2 py-1 rounded-full ${taskStatusPill(t.status)}`}>{t.status}</span>
-                        </div>
-
-                        <select
-                          className="w-full h-10 rounded-md border bg-background px-3 text-sm"
-                          value={t.status}
-                          onChange={(e) => patchTask(t.id, { status: e.target.value as TaskStatus })}
-                        >
-                          <option value="TODO">TODO</option>
-                          <option value="DOING">DOING</option>
-                          <option value="DONE">DONE</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-1 sm:col-span-1">
-                        <Label>Peso</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={100}
-                          value={weightDrafts[t.id] ?? String(t.weight ?? "")}
-                          onChange={(e) => {
-                            const raw = e.target.value
-                            if (raw === "" || /^\d+$/.test(raw)) {
-                              setWeightDrafts((prev) => ({ ...prev, [t.id]: raw }))
-                            }
-                          }}
-                          onBlur={() => {
-                            const draft = weightDrafts[t.id]
-                            const parsed = Math.min(100, Math.max(1, parseInt(draft ?? String(t.weight ?? "1"), 10) || 1))
-
-                            // Aggiorna subito la cache locale per riflettere il numero corretto
-                            qc.setQueryData<Task[]>(["tasks", projectId], (prev) =>
-                              (prev ?? []).map((x) => (x.id === t.id ? { ...x, weight: parsed } : x))
-                            )
-
-                            setWeightDrafts((prev) => {
-                              const next = { ...prev }
-                              delete next[t.id]
-                              return next
-                            })
-
-                            patchTask(t.id, { weight: parsed })
-                          }}
-                        />
-                      </div>
-
-                      <div className="space-y-1 sm:col-span-2">
-                        <Label>Scadenza</Label>
-                        <Input type="date" value={t.due_date ?? ""} onChange={(e) => patchTask(t.id, { due_date: e.target.value || null })} />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <Button variant="outline" size="icon" onClick={() => moveTask(t.id, "UP")} disabled={idx === 0} title="Sposta su">
-                      <ChevronUp className="w-4 h-4" />
-                    </Button>
-                    <Button variant="outline" size="icon" onClick={() => moveTask(t.id, "DOWN")} disabled={idx === tasks.length - 1} title="Sposta giù">
-                      <ChevronDown className="w-4 h-4" />
-                    </Button>
-                    <Button variant="destructive" size="icon" onClick={() => askDelete(t)} title="Elimina">
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </GlassCard>
-
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Nuova task</DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Titolo</Label>
-              <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Es. Setup hosting" />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Peso</Label>
-              <Input inputMode="numeric" pattern="[0-9]*" value={newWeight} onChange={(e) => { const v = e.target.value 
-                  if (v === "" || /^\d+$/.test(v)) setNewWeight(v)
-                }}
-                onBlur={() => {
-                  if (newWeight === "") setNewWeight("1")
-                }}
-              />
-
-            </div>
-          </div>
-
-          <DialogFooter className="mt-6 gap-2">
-            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
-              Annulla
-            </Button>
-            <Button className="glow-button" onClick={createTask} disabled={creating || !newTitle.trim()}>
-              {creating ? "Creazione..." : "Crea"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eliminare task?</AlertDialogTitle>
-            <AlertDialogDescription>{deleteTarget ? `Stai per eliminare "${deleteTarget.title}".` : "Questa azione è definitiva."}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Annulla</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault()
-                confirmDelete()
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleting}
-            >
-              {deleting ? "Eliminazione..." : "Elimina"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteTaskDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        deleting={deleting}
+        title={deleteTarget?.title ?? null}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }
