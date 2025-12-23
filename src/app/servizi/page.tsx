@@ -9,7 +9,7 @@ import { GlassCard } from "@/src/components/ui-custom/glass-card"
 import { Button } from "@/src/components/ui/button"
 
 export const metadata: Metadata = {
-  title: "Servizi | 2it Agency",
+  title: "Servizi | 2it",
   description:
     "Scopri i nostri servizi di web design, sviluppo, app mobile, SEO e marketing digitale per far crescere il tuo business online.",
 }

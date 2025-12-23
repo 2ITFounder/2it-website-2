@@ -8,7 +8,7 @@ import { Container } from "@/src/components/ui-custom/container"
 import { Section } from "@/src/components/ui-custom/section"
 
 export const metadata: Metadata = {
-  title: "Progetti | 2it Agency",
+  title: "Progetti | 2it",
   description:
     "Scopri il nostro portfolio di progetti web: e-commerce, SaaS, siti corporate e applicazioni web innovative.",
 }

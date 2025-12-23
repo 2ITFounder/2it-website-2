@@ -5,8 +5,8 @@ import { Container } from "@/src/components/ui-custom/container"
 import { Section } from "@/src/components/ui-custom/section"
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | 2it Agency",
-  description: "Informativa sulla privacy e sul trattamento dei dati personali di 2it Agency.",
+  title: "Privacy Policy | 2it",
+  description: "Informativa sulla privacy e sul trattamento dei dati personali di 2it.",
 }
 
 export default function PrivacyPage() {
@@ -26,7 +26,7 @@ export default function PrivacyPage() {
 
               <h2 className="text-2xl font-semibold mt-12 mb-4">1. Titolare del trattamento</h2>
               <p className="text-muted-foreground leading-relaxed">
-                Il titolare del trattamento dei dati personali è 2it Agency S.r.l., con sede legale in Via Roma 123,
+                Il titolare del trattamento dei dati personali è 2it S.r.l., con sede legale in Via Roma 123,
                 20121 Milano (MI), Italia.
               </p>
 

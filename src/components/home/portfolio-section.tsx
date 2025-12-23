@@ -15,10 +15,10 @@ const projects = [
     href: "/progetti/techflow",
   },
   {
-    title: "Elegance Fashion",
-    category: "E-commerce",
-    image: "/luxury-fashion-ecommerce.png",
-    href: "/progetti/elegance",
+    title: "Studio di Nutrizione & Tricologia",
+    category: "SITO PROFESSIONALE",
+    image: "/sitovetrina.png",
+    href: "/progetti/sitovetrina",
   },
   {
     title: "HealthCare Plus",

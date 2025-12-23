@@ -378,6 +378,43 @@ html {
   100% { transform: translateX(-50%); }
 }
 
+.hero-underline {
+  position: relative;
+  display: inline-block;
+  color: var(--color-primary-foreground);
+  padding: 0 0.06em;
+}
+
+.hero-underline::after {
+  content: "";
+  position: absolute;
+
+  /* POSIZIONE: più in basso */
+  left: 0.04em;
+  right: 0.04em;
+  bottom: -0.18em; /* 👈 QUESTO è il punto chiave */
+
+  /* SPESSORE: da hero */
+  height: 0.22em;
+
+  border-radius: 9999px;
+
+  /* COLORE + GLOW */
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(0.75 0.18 195 / 1),
+    transparent
+  );
+
+  filter: blur(1.2px);
+  opacity: 2;
+}
+
+
+
+
+
 .marquee {
   display: flex;
   width: max-content;

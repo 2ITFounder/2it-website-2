@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "2it Agency | Web Agency B2B",
+    title: "2it | Web Agency B2B",
     description: "Trasformiamo le tue idee in esperienze digitali straordinarie.",
   },
   icons: {

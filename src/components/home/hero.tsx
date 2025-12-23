@@ -166,12 +166,6 @@ export function Hero() {
           </div>
         </div>
       </Container>
-
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
-        <div className="w-8 h-12 rounded-full border-2 border-primary/40 flex items-start justify-center p-2 hover:border-accent transition-colors cursor-pointer group">
-          <div className="w-1.5 h-3 bg-gradient-to-b from-primary to-accent rounded-full group-hover:h-4 transition-all" />
-        </div>
-      </div>
     </section>
   );
 }

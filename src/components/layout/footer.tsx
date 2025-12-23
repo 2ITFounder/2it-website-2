@@ -157,7 +157,7 @@ export function Footer() {
           )}
         >
           <p className="text-sm text-primary-foreground/50 text-center">
-            © {new Date().getFullYear()} 2it Agency. Tutti i diritti riservati.
+            © {new Date().getFullYear()} 2it. Tutti i diritti riservati.
           </p>
         </div>
       </Container>

@@ -76,10 +76,11 @@ export function CTASection() {
           <h2
             className={cn(
               "text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-balance",
+              "leading-[1.15] md:leading-[1.1]",
               "text-primary-foreground animate-fade-in-up",
             )}
           >
-            Pronto a far <span className="gradient-text">crescere</span> il tuo business?
+            Pronto a far <span className="hero-underline">crescere</span> il tuo business?
           </h2>
 
           <p
