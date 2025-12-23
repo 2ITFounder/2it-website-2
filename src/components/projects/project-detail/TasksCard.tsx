@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { GlassCard } from "@/src/components/ui-custom/glass-card"
+import { Button } from "@/src/components/ui/button"
 import type { Task, TaskPatch, TaskStatus } from "../../../app/(dashboard)/dashboard/progetti/_lib/types"
 import type { QueryClient } from "@tanstack/react-query"
 import { TaskRow } from "./TaskRow"
@@ -31,6 +32,7 @@ export function TasksCard(props: {
 }) {
   const { tasks, projectId, qc, weightDrafts, setWeightDrafts, onPatch, onMove, onAskDelete } = props
   const [sortMode, setSortMode] = useState<SortMode>("DEFAULT")
+  const [activeStatus, setActiveStatus] = useState<TaskStatus | null>("TODO")
 
   const indexed = useMemo<IndexedTask[]>(() => tasks.map((t, index) => ({ t, index })), [tasks])
 
@@ -70,10 +72,25 @@ export function TasksCard(props: {
   }, [sorted])
 
   const columns: Array<{ status: TaskStatus; title: string }> = [
-    { status: "TODO", title: "TODO" },
+    { status: "TODO", title: "TO DO" },
     { status: "DOING", title: "DOING" },
     { status: "DONE", title: "DONE" },
   ]
+
+  const statusButtonClasses: Record<TaskStatus, { active: string; inactive: string }> = {
+    TODO: {
+      active: "bg-gray-100 text-gray-900 border-gray-200 hover:bg-gray-100",
+      inactive: "border-gray-200 text-gray-700 hover:bg-gray-50",
+    },
+    DOING: {
+      active: "bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100",
+      inactive: "border-blue-200 text-blue-700 hover:bg-blue-50",
+    },
+    DONE: {
+      active: "bg-green-100 text-green-800 border-green-200 hover:bg-green-100",
+      inactive: "border-green-200 text-green-700 hover:bg-green-50",
+    },
+  }
 
   const enableMove = sortMode === "DEFAULT"
 
@@ -102,42 +119,51 @@ export function TasksCard(props: {
       {tasks.length === 0 ? (
         <div className="text-muted-foreground text-sm">Nessuna task. Creane una per iniziare.</div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {columns.map((col) => {
-            const items = tasksByStatus[col.status]
-            return (
-              <div key={col.status} className="rounded-lg border bg-muted/20 p-3 space-y-4">
-                <div className="flex items-center justify-between border-b pb-2">
-                  <h3 className="text-sm font-semibold">{col.title}</h3>
-                  <span className="text-xs text-muted-foreground">{items.length}</span>
-                </div>
+        <>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {columns.map((col) => {
+              const count = tasksByStatus[col.status].length
+              const isActive = activeStatus === col.status
+              return (
+                <Button
+                  key={col.status}
+                  type="button"
+                  variant="outline"
+                  onClick={() => setActiveStatus(isActive ? null : col.status)}
+                  className={`gap-2 ${isActive ? statusButtonClasses[col.status].active : statusButtonClasses[col.status].inactive}`}
+                >
+                  <span>{col.title}</span>
+                  <span className={isActive ? "opacity-70" : "text-muted-foreground"}>({count})</span>
+                </Button>
+              )
+            })}
+          </div>
 
-                {items.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">Nessuna task.</div>
-                ) : (
-                  <div className="space-y-4">
-                    {items.map((item, idx) => (
-                      <TaskRow
-                        key={item.t.id}
-                        t={item.t}
-                        idx={idx}
-                        total={items.length}
-                        projectId={projectId}
-                        qc={qc}
-                        weightDrafts={weightDrafts}
-                        setWeightDrafts={setWeightDrafts}
-                        onPatch={onPatch}
-                        onMove={onMove}
-                        onAskDelete={onAskDelete}
-                        enableMove={enableMove}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+          {activeStatus === null ? (
+            <div className="text-sm text-muted-foreground">Seleziona una categoria per vedere le task.</div>
+          ) : tasksByStatus[activeStatus].length === 0 ? (
+            <div className="text-sm text-muted-foreground">Nessuna task.</div>
+          ) : (
+            <div className="space-y-4">
+              {tasksByStatus[activeStatus].map((item, idx) => (
+                <TaskRow
+                  key={item.t.id}
+                  t={item.t}
+                  idx={idx}
+                  total={tasksByStatus[activeStatus].length}
+                  projectId={projectId}
+                  qc={qc}
+                  weightDrafts={weightDrafts}
+                  setWeightDrafts={setWeightDrafts}
+                  onPatch={onPatch}
+                  onMove={onMove}
+                  onAskDelete={onAskDelete}
+                  enableMove={enableMove}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </GlassCard>
   )
