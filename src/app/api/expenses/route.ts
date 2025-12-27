@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createSupabaseRouteClient } from "@/src/lib/supabase/route"
 import { createSupabaseServiceClient } from "@/src/lib/supabase/service"
 import { ExpenseCreateSchema } from "@/src/lib/expenses/schema"
+import { notifyAdmins } from "@/src/lib/push/server"
 
 export async function GET(req: Request) {
   const supabase = await createSupabaseRouteClient()
@@ -104,6 +105,26 @@ export async function POST(req: Request) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  try {
+    const amountLabel = new Intl.NumberFormat("it-IT", {
+      style: "currency",
+      currency: data.currency || "EUR",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(Number(data.amount || 0))
+    await notifyAdmins(
+      {
+        title: "Nuova spesa",
+        body: `${auth.user.email} ha aggiunto "${data.name}" (${amountLabel})`,
+        url: "/dashboard/spese",
+        type: "expense-new",
+      },
+      { excludeUserId: auth.user.id }
+    )
+  } catch (e) {
+    console.error("notifyAdmins failed:", e)
+  }
 
   const { data: firstCycle } = await supabase
     .from("expense_cycles")
