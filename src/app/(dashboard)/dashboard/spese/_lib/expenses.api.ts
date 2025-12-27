@@ -1,5 +1,6 @@
 import { apiGet } from "@/src/lib/api"
 import { Expense, ExpenseCycle } from "@/src/lib/expenses/schema"
+import type { ExpenseUser } from "./types"
 
 export function extractErrorMessage(err: any) {
   if (!err) return null
@@ -21,6 +22,21 @@ export async function apiGetExpenseCycles(expenseId: string, signal?: AbortSigna
   return apiGet<ExpenseCycle[]>(`/api/expenses/${encodeURIComponent(expenseId)}/cycles`, signal)
 }
 
+export async function apiGetExpenseUsers(signal?: AbortSignal) {
+  return apiGet<ExpenseUser[]>(`/api/expenses/users`, signal)
+}
+
+export async function apiUpdateExpenseUser(userId: string, includeInExpenses: boolean) {
+  const res = await fetch("/api/expenses/users", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: userId, include_in_expenses: includeInExpenses }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json?.error ?? "Errore aggiornamento utente")
+  return json?.data ?? json
+}
+
 export async function apiPayExpenseCycle(cycleId: string) {
   const res = await fetch(`/api/expense-cycles/${cycleId}/pay`, { method: "PATCH" })
   const json = await res.json().catch(() => ({}))
@@ -34,8 +50,9 @@ export async function apiCreateExpense(payload: Partial<Expense>) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json?.error ?? "Errore creazione spesa")
+  return json
 }
 
 export async function apiUpdateExpense(id: string, patch: Partial<Expense>) {

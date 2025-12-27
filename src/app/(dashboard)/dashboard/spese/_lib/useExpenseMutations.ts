@@ -73,6 +73,8 @@ export function useExpenseMutations({
         // `first_due_date` richiesto dal backend: riusiamo il valore inserito per la prossima scadenza
         first_due_date: form.next_due_date,
         next_due_date: form.next_due_date || null,
+        expense_scope: form.expense_scope,
+        personal_user_id: form.expense_scope === "personal" ? form.personal_user_id || null : null,
         notes: form.notes.trim() || null,
         tags: form.tags
           .split(",")
@@ -102,6 +104,8 @@ export function useExpenseMutations({
         currency: form.currency || "EUR",
         active: Boolean(form.active),
         next_due_date: form.next_due_date || null,
+        expense_scope: form.expense_scope,
+        personal_user_id: form.expense_scope === "personal" ? form.personal_user_id || null : null,
         notes: form.notes.trim() || null,
         tags: form.tags
           .split(",")

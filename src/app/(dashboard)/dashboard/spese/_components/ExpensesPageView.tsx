@@ -7,7 +7,7 @@ import { ExpenseDetailDialog } from "./ExpenseDetailDialog"
 import { ExpenseListCard } from "./ExpenseListCard"
 import { ExpensesHeader } from "./ExpensesHeader"
 import { ExpensesStatsGrid } from "./ExpensesStatsGrid"
-import type { ExpenseFormState, Totals } from "../_lib/types"
+import type { ExpenseFormState, ExpenseUser, Totals } from "../_lib/types"
 
 
 type ExpensesQueryShape = {
@@ -17,6 +17,12 @@ type ExpensesQueryShape = {
   refetch: () => void
 }
 
+type UsersQueryShape = {
+  isLoading: boolean
+  isFetching: boolean
+  error: unknown
+  refetch: () => void
+}
 
 type CyclesQueryShape = {
   isFetching: boolean
@@ -41,6 +47,10 @@ type ToggleActiveMutationShape = {
   mutate: (args: { id: string; active: boolean }) => void
 }
 
+type UpdateUserMutationShape = {
+  isPending: boolean
+  mutate: (args: { userId: string; includeInExpenses: boolean }) => void
+}
 
 type Props = {
   // header
@@ -49,6 +59,10 @@ type Props = {
   setOnlyActive: (value: boolean) => void
   expensesQuery: ExpensesQueryShape
   topError: string | null
+  userError: string | null
+  usersQuery: UsersQueryShape
+  expenseUsers: ExpenseUser[]
+  updateUserMutation: UpdateUserMutationShape
 
   // stats
   totals: Totals
@@ -79,6 +93,8 @@ type Props = {
   editingExpense: Expense | null
   form: ExpenseFormState
   setForm: React.Dispatch<React.SetStateAction<ExpenseFormState>>
+  formError: string | null
+  includedUsers: ExpenseUser[]
   createMutation: CreateOrUpdateMutationShape
   updateMutation: CreateOrUpdateMutationShape
 }
@@ -90,6 +106,10 @@ export function ExpensesPageView(props: Props) {
     setOnlyActive,
     expensesQuery,
     topError,
+    userError,
+    usersQuery,
+    expenseUsers,
+    updateUserMutation,
     totals,
     visibleExpenses,
     query,
@@ -112,6 +132,8 @@ export function ExpensesPageView(props: Props) {
     editingExpense,
     form,
     setForm,
+    formError,
+    includedUsers,
     createMutation,
     updateMutation,
   } = props
@@ -124,6 +146,10 @@ export function ExpensesPageView(props: Props) {
         setOnlyActive={setOnlyActive}
         expensesQuery={expensesQuery}
         topError={topError}
+        userError={userError}
+        usersQuery={usersQuery}
+        expenseUsers={expenseUsers}
+        updateUserMutation={updateUserMutation}
       />
 
       <ExpensesStatsGrid totals={totals} />
@@ -137,6 +163,7 @@ export function ExpensesPageView(props: Props) {
         openEdit={openEdit}
         deleteMutation={deleteMutation}
         toggleActiveMutation={toggleActiveMutation}
+        expenseUsers={expenseUsers}
       />
 
       {/* Dialog DETTAGLI */}
@@ -150,6 +177,7 @@ export function ExpensesPageView(props: Props) {
         nextPending={nextPending}
         payMutation={payMutation}
         extractErrorMessage={extractErrorMessage}
+        expenseUsers={expenseUsers}
       />
 
       {/* Dialog CREATE/EDIT */}
@@ -159,6 +187,9 @@ export function ExpensesPageView(props: Props) {
         editingExpense={editingExpense}
         form={form}
         setForm={setForm}
+        formError={formError}
+        includedUsers={includedUsers}
+        expenseUsers={expenseUsers}
         createMutation={createMutation}
         updateMutation={updateMutation}
       />

@@ -1,6 +1,7 @@
 "use client"
 
 import type { Expense, ExpenseCycle } from "@/src/lib/expenses/schema"
+import type { ExpenseUser } from "../_lib/types"
 import type { CycleStatus } from "../_lib/constants"
 import { cadenceLabel, cycleStatusClass } from "../_lib/constants"
 import { formatCurrency, formatDate } from "../_lib/formatters"
@@ -24,6 +25,7 @@ type Props = {
     mutate: (args: { cycleId: string; expenseId: string }) => void
   }
   extractErrorMessage: (err: unknown) => string | null | undefined
+  expenseUsers: ExpenseUser[]
 }
 
 export function ExpenseDetailDialog({
@@ -36,7 +38,14 @@ export function ExpenseDetailDialog({
   nextPending,
   payMutation,
   extractErrorMessage,
+  expenseUsers,
 }: Props) {
+  const labelForUser = (userId?: string | null) => {
+    if (!userId) return null
+    const match = expenseUsers.find((user) => user.user_id === userId)
+    return match?.username || match?.email || userId
+  }
+
   return (
     <Dialog
       open={isOpen}
@@ -58,7 +67,7 @@ export function ExpenseDetailDialog({
 
         {selectedExpense ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div className="p-3 rounded-lg bg-muted/60">
                 <p className="text-xs text-muted-foreground">Vendor</p>
                 <p className="font-medium">{selectedExpense.vendor || "-"}</p>
@@ -71,6 +80,14 @@ export function ExpenseDetailDialog({
                 <p className="text-xs text-muted-foreground">Cadenza</p>
                 <p className="font-medium">
                   {cadenceLabel[selectedExpense.cadence]} - Prossimo {formatDate(selectedExpense.next_due_date)}
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/60">
+                <p className="text-xs text-muted-foreground">Tipo</p>
+                <p className="font-medium">
+                  {selectedExpense.expense_scope === "personal"
+                    ? `Personale${labelForUser(selectedExpense.personal_user_id) ? " · " + labelForUser(selectedExpense.personal_user_id) : ""}`
+                    : "Comune"}
                 </p>
               </div>
             </div>

@@ -1,33 +1,19 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { computeBaseMonthly, computeSplitPercentages } from "./_lib/expense-math"
+import { useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { ExpensesPageView } from "./_components/ExpensesPageView"
-import { defaultExpenseForm } from "./_lib/form-defaults"
-import { Expense, ExpenseCycle } from "@/src/lib/expenses/schema"
 import { useExpensesQuery } from "./_lib/useExpensesQuery"
 import { useExpenseCycles } from "./_lib/useExpenseCycles"
 import { useExpenseMutations } from "./_lib/useExpenseMutations"
 import { useExpenseUIState } from "./_lib/useExpenseUIState"
 import { useExpensesDerived } from "./_lib/useExpensesDerived"
-
-
-
-
-
-import {
-  apiGetExpenseCycles,
-  apiGetExpenses,
-  apiPayExpenseCycle,
-  extractErrorMessage,
-  apiCreateExpense,
-  apiUpdateExpense,
-  apiDeleteExpense,
-} from "./_lib/expenses.api"
+import { useExpenseUsers } from "./_lib/useExpenseUsers"
+import { extractErrorMessage } from "./_lib/expenses.api"
 
 export default function ExpensesPage() {
   const qc = useQueryClient()
+  const [userError, setUserError] = useState<string | null>(null)
   const {
     query,
     setQuery,
@@ -55,10 +41,17 @@ export default function ExpensesPage() {
 
   
   const { expensesQuery, allExpenses, activeExpenses, topError } = useExpensesQuery()
+  const { usersQuery, allUsers, includedUsers, updateUserMutation } = useExpenseUsers({ qc, setUserError })
 
-  const { cyclesKey, cyclesQuery, cycles, nextPending } = useExpenseCycles(selectedExpense?.id ?? null)
+  const { cyclesQuery, cycles, nextPending } = useExpenseCycles(selectedExpense?.id ?? null)
 
-  const { visibleExpenses, totals } = useExpensesDerived({ allExpenses, activeExpenses, onlyActive, query })
+  const { visibleExpenses, totals } = useExpensesDerived({
+    allExpenses,
+    activeExpenses,
+    onlyActive,
+    query,
+    includedUsers,
+  })
 
   const { payMutation, createMutation, updateMutation, deleteMutation, toggleActiveMutation } = useExpenseMutations({
     qc,
@@ -77,6 +70,10 @@ export default function ExpensesPage() {
       setOnlyActive={setOnlyActive}
       expensesQuery={expensesQuery}
       topError={topError}
+      userError={userError}
+      usersQuery={usersQuery}
+      expenseUsers={allUsers}
+      updateUserMutation={updateUserMutation}
       totals={totals}
       visibleExpenses={visibleExpenses}
       query={query}
@@ -99,6 +96,9 @@ export default function ExpensesPage() {
       editingExpense={editingExpense}
       form={form}
       setForm={setForm}
+      formError={formError}
+      includedUsers={includedUsers}
+      expenseUsers={allUsers}
       createMutation={createMutation}
       updateMutation={updateMutation}
     />

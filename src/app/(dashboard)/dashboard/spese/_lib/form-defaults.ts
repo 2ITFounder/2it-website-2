@@ -11,4 +11,6 @@ export const defaultExpenseForm: ExpenseFormState = {
   next_due_date: "", // "YYYY-MM-DD"
   tags: "",
   notes: "",
+  expense_scope: "shared",
+  personal_user_id: "",
 }

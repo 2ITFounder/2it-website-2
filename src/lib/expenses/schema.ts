@@ -1,8 +1,8 @@
 import { z } from "zod"
 
 export const ExpenseCadenceEnum = z.enum(["monthly", "yearly", "one_time"])
-export const ExpenseSplitModeEnum = z.enum(["equal", "custom"])
 export const ExpenseCycleStatusEnum = z.enum(["pending", "paid", "late"])
+export const ExpenseScopeEnum = z.enum(["shared", "personal"])
 
 const isoDateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data non valida")
 
@@ -16,8 +16,8 @@ export const ExpenseCreateSchema = z.object({
   cadence: ExpenseCadenceEnum.optional(),
   first_due_date: isoDateString,
   active: z.boolean().optional(),
-  split_mode: ExpenseSplitModeEnum.optional(),
-  split_custom: z.record(z.number().min(0).max(100)).optional(),
+  expense_scope: ExpenseScopeEnum.optional(),
+  personal_user_id: z.string().uuid().optional().nullable(),
   notes: z.string().optional().nullable(),
 })
 
@@ -27,8 +27,8 @@ export const ExpenseUpdateSchema = ExpenseCreateSchema.partial().extend({
 })
 
 export type ExpenseCadence = z.infer<typeof ExpenseCadenceEnum>
-export type ExpenseSplitMode = z.infer<typeof ExpenseSplitModeEnum>
 export type ExpenseCycleStatus = z.infer<typeof ExpenseCycleStatusEnum>
+export type ExpenseScope = z.infer<typeof ExpenseScopeEnum>
 
 export type Expense = {
   id: string
@@ -42,8 +42,8 @@ export type Expense = {
   first_due_date: string
   next_due_date: string
   active: boolean
-  split_mode: ExpenseSplitMode
-  split_custom: Record<string, number> | null
+  expense_scope: ExpenseScope
+  personal_user_id: string | null
   notes: string | null
   created_by: string
   created_at: string

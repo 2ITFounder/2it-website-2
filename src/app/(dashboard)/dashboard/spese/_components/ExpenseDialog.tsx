@@ -6,7 +6,7 @@ import { Button } from "@/src/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/src/components/ui/dialog"
 import { Input } from "@/src/components/ui/input"
 import { Switch } from "@/src/components/ui/switch"
-import type { ExpenseFormState } from "../_lib/types"
+import type { ExpenseFormState, ExpenseUser } from "../_lib/types"
 
 
 type Props = {
@@ -15,6 +15,9 @@ type Props = {
   editingExpense: null | { id: string }
   form: ExpenseFormState
   setForm: Dispatch<SetStateAction<ExpenseFormState>>
+  formError: string | null
+  includedUsers: ExpenseUser[]
+  expenseUsers: ExpenseUser[]
   createMutation: {
     mutate: () => void
     isPending: boolean
@@ -32,9 +35,18 @@ export function ExpenseDialog({
   editingExpense,
   form,
   setForm,
+  formError,
+  includedUsers,
+  expenseUsers,
   createMutation,
   updateMutation,
 }: Props) {
+  const sortedUsers = [...expenseUsers].sort((a, b) => {
+    const aLabel = (a.username || a.email || a.user_id).toLowerCase()
+    const bLabel = (b.username || b.email || b.user_id).toLowerCase()
+    return aLabel.localeCompare(bLabel)
+  })
+
   return (
     <Dialog
       open={editOpen}
@@ -49,6 +61,10 @@ export function ExpenseDialog({
         <DialogHeader>
           <DialogTitle>{editingExpense ? "Modifica spesa" : "Nuova spesa"}</DialogTitle>
         </DialogHeader>
+
+        {formError ? (
+          <div className="rounded-md bg-destructive/10 text-destructive text-sm px-3 py-2">{formError}</div>
+        ) : null}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="sm:col-span-2">
@@ -74,6 +90,50 @@ export function ExpenseDialog({
               onChange={(e: ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, category: e.target.value }))}
             />
           </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground">Tipo spesa</label>
+            <select
+              className="w-full h-10 rounded-md border bg-background px-3 text-sm"
+              value={form.expense_scope}
+              onChange={(e) =>
+                setForm((p) => ({
+                  ...p,
+                  expense_scope: e.target.value as Expense["expense_scope"],
+                  personal_user_id: e.target.value === "personal" ? p.personal_user_id : "",
+                }))
+              }
+            >
+              <option value="shared">Comune</option>
+              <option value="personal">Personale</option>
+            </select>
+          </div>
+
+          {form.expense_scope === "personal" ? (
+            <div>
+              <label className="text-xs text-muted-foreground">Utente</label>
+              <select
+                className="w-full h-10 rounded-md border bg-background px-3 text-sm"
+                value={form.personal_user_id}
+                onChange={(e) => setForm((p) => ({ ...p, personal_user_id: e.target.value }))}
+              >
+                <option value="">Seleziona utente</option>
+                {sortedUsers.map((user) => {
+                  const label = user.username || user.email || user.user_id
+                  const disabled = !user.include_in_expenses
+                  return (
+                    <option key={user.user_id} value={user.user_id} disabled={disabled}>
+                      {label}
+                      {disabled ? " (non incluso)" : ""}
+                    </option>
+                  )
+                })}
+              </select>
+              {includedUsers.length === 0 ? (
+                <p className="text-xs text-destructive mt-1">Nessun utente inserito nelle spese.</p>
+              ) : null}
+            </div>
+          ) : null}
 
           <div>
             <label className="text-xs text-muted-foreground">Cadenza</label>

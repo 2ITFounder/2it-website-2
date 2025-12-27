@@ -52,6 +52,8 @@ export function useExpenseUIState() {
       next_due_date: (exp.next_due_date ?? "").slice(0, 10),
       tags: (exp.tags ?? []).join(", "),
       notes: exp.notes ?? "",
+      expense_scope: exp.expense_scope ?? "shared",
+      personal_user_id: exp.personal_user_id ?? "",
     })
     setEditOpen(true)
   }

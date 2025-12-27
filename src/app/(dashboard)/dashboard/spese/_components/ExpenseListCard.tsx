@@ -8,6 +8,7 @@ import { Button } from "@/src/components/ui/button"
 import { Switch } from "@/src/components/ui/switch"
 
 import type { Expense } from "@/src/lib/expenses/schema"
+import type { ExpenseUser } from "../_lib/types"
 import { cadenceLabel, statusClass } from "../_lib/constants"
 import { formatCurrency, formatDate } from "../_lib/formatters"
 
@@ -34,6 +35,7 @@ type Props = {
   openEdit: (expense: Expense) => void
   deleteMutation: DeleteMutationShape
   toggleActiveMutation: ToggleActiveMutationShape
+  expenseUsers: ExpenseUser[]
 }
 
 export function ExpenseListCard({
@@ -45,7 +47,13 @@ export function ExpenseListCard({
   openEdit,
   deleteMutation,
   toggleActiveMutation,
+  expenseUsers,
 }: Props) {
+  const userLabelById = new Map(
+    expenseUsers.map((user) => [user.user_id, user.username || user.email || user.user_id])
+  )
+  const labelForUser = (userId?: string | null) => (userId ? userLabelById.get(userId) || userId : null)
+
   return (
     <GlassCard className="p-0 overflow-hidden">
       <div className="border-b px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -75,7 +83,14 @@ export function ExpenseListCard({
             <div key={exp.id} className={`p-4 space-y-3 ${exp.active ? "" : "opacity-60"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="font-medium truncate">{exp.name}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium truncate">{exp.name}</p>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                      {exp.expense_scope === "personal"
+                        ? `Personale${labelForUser(exp.personal_user_id) ? " · " + labelForUser(exp.personal_user_id) : ""}`
+                        : "Comune"}
+                    </span>
+                  </div>
                   <p className="text-sm text-muted-foreground truncate">{exp.vendor || "-"}</p>
                   {exp.tags?.length ? (
                     <p className="text-xs text-muted-foreground truncate">Tag: {exp.tags.join(", ")}</p>
@@ -163,7 +178,14 @@ export function ExpenseListCard({
                 }`}
               >
                 <div className="flex flex-col">
-                  <span className="font-medium">{exp.name}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{exp.name}</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                      {exp.expense_scope === "personal"
+                        ? `Personale${labelForUser(exp.personal_user_id) ? " · " + labelForUser(exp.personal_user_id) : ""}`
+                        : "Comune"}
+                    </span>
+                  </div>
                   {exp.tags?.length ? (
                     <span className="text-xs text-muted-foreground truncate">Tag: {exp.tags.join(", ")}</span>
                   ) : null}
