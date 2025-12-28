@@ -8,14 +8,15 @@ type CycleRow = {
   due_date: string
   amount: number
   status: string
-  expenses: {
+  // Supabase con join ritorna un array (anche se è 1:1)
+  expenses: Array<{
     id: string
     name: string
     currency: string
     expense_scope: "shared" | "personal"
     personal_user_id: string | null
     active: boolean
-  } | null
+  }> | null
 }
 
 const ROME_TZ = "Europe/Rome"
@@ -30,6 +31,7 @@ function getRomeDateParts(date = new Date()) {
     minute: "2-digit",
     hour12: false,
   }).formatToParts(date)
+
   const map = new Map(parts.map((p) => [p.type, p.value]))
   const year = map.get("year") ?? "1970"
   const month = map.get("month") ?? "01"
@@ -96,6 +98,7 @@ export async function POST(req: Request) {
     .from("admin_users")
     .select("user_id")
     .eq("include_in_expenses", true)
+
   if (includedErr) return NextResponse.json({ error: includedErr.message }, { status: 500 })
   const includedIds = (includedRows ?? []).map((row: { user_id: string }) => row.user_id)
 
@@ -109,13 +112,19 @@ export async function POST(req: Request) {
     currency: string
   }> = []
 
-  for (const cycle of cycles as CycleRow[]) {
-    const exp = cycle.expenses
+  // Fix TS: tipizziamo correttamente come CycleRow[] e leggiamo expenses[0]
+  for (const cycle of cycles as unknown as CycleRow[]) {
+    const exp = cycle.expenses?.[0]
     if (!exp) continue
+
     const kind: "due_1d" | "due_7d" = cycle.due_date === date1 ? "due_1d" : "due_7d"
 
     const recipients =
-      exp.expense_scope === "personal" ? (exp.personal_user_id ? [exp.personal_user_id] : []) : includedIds
+      exp.expense_scope === "personal"
+        ? exp.personal_user_id
+          ? [exp.personal_user_id]
+          : []
+        : includedIds
 
     for (const userId of recipients) {
       if (!userId) continue

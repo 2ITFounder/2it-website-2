@@ -1,0 +1,19 @@
+name: Expense notifications
+
+on:
+  schedule:
+    # Copre ora legale/solare: una delle due corrisponderà alle 09:05 Europe/Rome
+    - cron: "5 7 * * *"
+    - cron: "5 8 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call Vercel endpoint
+        run: |
+          curl -sS -X POST "${{ secrets.NOTIFICATIONS_RUN_URL }}" \
+            -H "x-expense-secret: ${{ secrets.EXPENSE_NOTIFICATIONS_SECRET }}" \
+            -H "content-type: application/json"
