@@ -144,9 +144,24 @@ export async function POST(req: Request) {
     }
   }
 
-  if (candidates.length === 0) {
-    return NextResponse.json({ ok: true, sent: 0, cycles: cycles.length })
+ if (candidates.length === 0) {
+    const res = NextResponse.json({
+      ok: true,
+      version: "debug-candidates-0",
+      sent: 0,
+      cycles: cycles.length,
+      debug: {
+        cyclesFound: cycles.length,
+        includedIds: includedIds.length,
+        firstCycleExpensesType: Array.isArray((cycles as any)?.[0]?.expenses) ? "array" : typeof (cycles as any)?.[0]?.expenses,
+        firstCycleExpensesLen: Array.isArray((cycles as any)?.[0]?.expenses) ? (cycles as any)[0].expenses.length : null,
+        firstCycleHasExpenses: Boolean((cycles as any)?.[0]?.expenses),
+      },
+    })
+    res.headers.set("x-expense-notify-version", "debug-candidates-0")
+    return res
   }
+
 
   const cycleIds = Array.from(new Set(candidates.map((c) => c.cycleId)))
   const userIds = Array.from(new Set(candidates.map((c) => c.userId)))
