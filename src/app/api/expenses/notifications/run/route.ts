@@ -5,21 +5,26 @@ import { notifyUsers } from "@/src/lib/push/server"
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
+type ExpenseScope = "shared" | "personal"
+
+type ExpenseJoin = {
+  id: string
+  name: string
+  currency: string
+  expense_scope: ExpenseScope
+  personal_user_id: string | null
+  active: boolean
+}
+
+// PostgREST può tornare sia oggetto (1:1) sia array (in base alla relazione)
+// quindi tipizziamo come union e normalizziamo a runtime.
 type CycleRow = {
   id: string
   expense_id: string
   due_date: string
   amount: number
   status: string
-  // Supabase con join ritorna un array (anche se è 1:1)
-  expenses: Array<{
-    id: string
-    name: string
-    currency: string
-    expense_scope: "shared" | "personal"
-    personal_user_id: string | null
-    active: boolean
-  }> | null
+  expenses: ExpenseJoin | ExpenseJoin[] | null
 }
 
 const ROME_TZ = "Europe/Rome"
@@ -65,6 +70,13 @@ function formatDueDate(dateStr: string) {
   return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "short" }).format(d)
 }
 
+function pickExpense(raw: CycleRow["expenses"]): ExpenseJoin | null {
+  if (!raw) return null
+  if (Array.isArray(raw)) return raw[0] ?? null
+  if (typeof raw === "object") return raw
+  return null
+}
+
 export async function POST(req: Request) {
   const secret = process.env.EXPENSE_NOTIFICATIONS_SECRET
   if (!secret) return NextResponse.json({ error: "Missing secret" }, { status: 500 })
@@ -84,7 +96,7 @@ export async function POST(req: Request) {
 
   const supabase = createSupabaseServiceClient()
 
-  const { data: cycles, error: cyclesErr } = await supabase
+  const { data: cyclesRaw, error: cyclesErr } = await supabase
     .from("expense_cycles")
     .select(
       "id,expense_id,due_date,amount,status,expenses!inner(id,name,currency,expense_scope,personal_user_id,active)"
@@ -94,7 +106,9 @@ export async function POST(req: Request) {
     .in("due_date", targetDates)
 
   if (cyclesErr) return NextResponse.json({ error: cyclesErr.message }, { status: 500 })
-  if (!cycles?.length) {
+
+  const cycles = (cyclesRaw ?? []) as unknown as CycleRow[]
+  if (cycles.length === 0) {
     return NextResponse.json({ ok: true, sent: 0, cycles: 0 })
   }
 
@@ -104,7 +118,10 @@ export async function POST(req: Request) {
     .eq("include_in_expenses", true)
 
   if (includedErr) return NextResponse.json({ error: includedErr.message }, { status: 500 })
-  const includedIds = (includedRows ?? []).map((row: { user_id: string }) => row.user_id)
+
+  const includedIds = (includedRows ?? [])
+    .map((row: { user_id: string }) => row.user_id)
+    .filter(Boolean)
 
   const candidates: Array<{
     userId: string
@@ -116,9 +133,8 @@ export async function POST(req: Request) {
     currency: string
   }> = []
 
-  // Fix TS: tipizziamo correttamente come CycleRow[] e leggiamo expenses[0]
-  for (const cycle of cycles as unknown as CycleRow[]) {
-    const exp = cycle.expenses?.[0]
+  for (const cycle of cycles) {
+    const exp = pickExpense(cycle.expenses)
     if (!exp) continue
 
     const kind: "due_1d" | "due_7d" = cycle.due_date === date1 ? "due_1d" : "due_7d"
@@ -144,24 +160,25 @@ export async function POST(req: Request) {
     }
   }
 
- if (candidates.length === 0) {
+  if (candidates.length === 0) {
+    const first = cycles[0]
+    const raw = (first as any)?.expenses
     const res = NextResponse.json({
       ok: true,
       version: "debug-candidates-0",
       sent: 0,
       cycles: cycles.length,
       debug: {
-        cyclesFound: cycles.length,
         includedIds: includedIds.length,
-        firstCycleExpensesType: Array.isArray((cycles as any)?.[0]?.expenses) ? "array" : typeof (cycles as any)?.[0]?.expenses,
-        firstCycleExpensesLen: Array.isArray((cycles as any)?.[0]?.expenses) ? (cycles as any)[0].expenses.length : null,
-        firstCycleHasExpenses: Boolean((cycles as any)?.[0]?.expenses),
+        candidates: 0,
+        firstCycleExpensesType: Array.isArray(raw) ? "array" : typeof raw,
+        firstCycleExpensesLen: Array.isArray(raw) ? raw.length : null,
+        firstCycleHasExpenses: Boolean(raw),
       },
     })
     res.headers.set("x-expense-notify-version", "debug-candidates-0")
     return res
   }
-
 
   const cycleIds = Array.from(new Set(candidates.map((c) => c.cycleId)))
   const userIds = Array.from(new Set(candidates.map((c) => c.userId)))
@@ -208,6 +225,7 @@ export async function POST(req: Request) {
     const dueLabel = formatDueDate(item.dueDate)
     const amountLabel = formatCurrency(item.amount, item.currency)
     const prefix = item.kind === "due_1d" ? "Domani scade" : "Tra 7 giorni scade"
+
     const payload = {
       title: "Scadenza spesa",
       body: `${prefix} ${item.name} · ${amountLabel} · ${dueLabel}`,
@@ -250,19 +268,20 @@ export async function POST(req: Request) {
   }
 
   const res = NextResponse.json({
-      ok: true,
-      version: "debug-2025-12-29-01",
-      sent: toLog.length,
-      cycles: cycles.length,
-      date: dateStr,
-      debug: {
-        includedIds: includedIds.length,
-        candidates: candidates.length,
-        pending: pending.length,
-        groups: groups.size,
-      },
-    })
+    ok: true,
+    version: "debug-2025-12-29-01",
+    sent: toLog.length,
+    cycles: cycles.length,
+    date: dateStr,
+    debug: {
+      includedIds: includedIds.length,
+      candidates: candidates.length,
+      pending: pending.length,
+      groups: groups.size,
+      sentGroups: sentGroupKeys.size,
+    },
+  })
 
-    res.headers.set("x-expense-notify-version", "debug-2025-12-29-01")
-    return res
+  res.headers.set("x-expense-notify-version", "debug-2025-12-29-01")
+  return res
 }
