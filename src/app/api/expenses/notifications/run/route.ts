@@ -2,6 +2,9 @@ import { NextResponse } from "next/server"
 import { createSupabaseServiceClient } from "@/src/lib/supabase/service"
 import { notifyUsers } from "@/src/lib/push/server"
 
+export const dynamic = "force-dynamic"
+export const revalidate = 0
+
 type CycleRow = {
   id: string
   expense_id: string
