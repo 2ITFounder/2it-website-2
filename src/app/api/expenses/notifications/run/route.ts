@@ -231,17 +231,20 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({
-    ok: true,
-    version: "debug-2025-12-29-01",
-    sent: toLog.length,
-    cycles: cycles.length,
-    date: dateStr,
-    debug: {
-      includedIds: includedIds.length,
-      candidates: candidates.length,
-      pending: pending.length,
-      groups: groups.size,
-    },
-  })
+  const res = NextResponse.json({
+      ok: true,
+      version: "debug-2025-12-29-01",
+      sent: toLog.length,
+      cycles: cycles.length,
+      date: dateStr,
+      debug: {
+        includedIds: includedIds.length,
+        candidates: candidates.length,
+        pending: pending.length,
+        groups: groups.size,
+      },
+    })
+
+    res.headers.set("x-expense-notify-version", "debug-2025-12-29-01")
+    return res
 }
