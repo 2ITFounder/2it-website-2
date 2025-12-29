@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic"
 export const revalidate = 0
 
 type ExpenseScope = "shared" | "personal"
+type NotifyKind = "due_0d" | "due_1d" | "due_7d"
 
 type ExpenseJoin = {
   id: string
@@ -16,8 +17,6 @@ type ExpenseJoin = {
   active: boolean
 }
 
-// PostgREST può tornare sia oggetto (1:1) sia array (in base alla relazione)
-// quindi tipizziamo come union e normalizziamo a runtime.
 type CycleRow = {
   id: string
   expense_id: string
@@ -77,6 +76,13 @@ function pickExpense(raw: CycleRow["expenses"]): ExpenseJoin | null {
   return null
 }
 
+function kindFromDueDate(dueDate: string, date0: string, date1: string, date7: string): NotifyKind | null {
+  if (dueDate === date0) return "due_0d"
+  if (dueDate === date1) return "due_1d"
+  if (dueDate === date7) return "due_7d"
+  return null
+}
+
 export async function POST(req: Request) {
   const secret = process.env.EXPENSE_NOTIFICATIONS_SECRET
   if (!secret) return NextResponse.json({ error: "Missing secret" }, { status: 500 })
@@ -90,9 +96,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, skipped: "not-0900", date: dateStr, hour })
   }
 
+  const date0 = dateStr
   const date1 = addDays(dateStr, 1)
   const date7 = addDays(dateStr, 7)
-  const targetDates = [date1, date7]
+  const targetDates = [date0, date1, date7]
 
   const supabase = createSupabaseServiceClient()
 
@@ -109,7 +116,7 @@ export async function POST(req: Request) {
 
   const cycles = (cyclesRaw ?? []) as unknown as CycleRow[]
   if (cycles.length === 0) {
-    return NextResponse.json({ ok: true, sent: 0, cycles: 0 })
+    return NextResponse.json({ ok: true, sent: 0, cycles: 0, date: dateStr })
   }
 
   const { data: includedRows, error: includedErr } = await supabase
@@ -126,7 +133,7 @@ export async function POST(req: Request) {
   const candidates: Array<{
     userId: string
     cycleId: string
-    kind: "due_1d" | "due_7d"
+    kind: NotifyKind
     dueDate: string
     name: string
     amount: number
@@ -137,7 +144,8 @@ export async function POST(req: Request) {
     const exp = pickExpense(cycle.expenses)
     if (!exp) continue
 
-    const kind: "due_1d" | "due_7d" = cycle.due_date === date1 ? "due_1d" : "due_7d"
+    const kind = kindFromDueDate(cycle.due_date, date0, date1, date7)
+    if (!kind) continue
 
     const recipients =
       exp.expense_scope === "personal"
@@ -161,23 +169,7 @@ export async function POST(req: Request) {
   }
 
   if (candidates.length === 0) {
-    const first = cycles[0]
-    const raw = (first as any)?.expenses
-    const res = NextResponse.json({
-      ok: true,
-      version: "debug-candidates-0",
-      sent: 0,
-      cycles: cycles.length,
-      debug: {
-        includedIds: includedIds.length,
-        candidates: 0,
-        firstCycleExpensesType: Array.isArray(raw) ? "array" : typeof raw,
-        firstCycleExpensesLen: Array.isArray(raw) ? raw.length : null,
-        firstCycleHasExpenses: Boolean(raw),
-      },
-    })
-    res.headers.set("x-expense-notify-version", "debug-candidates-0")
-    return res
+    return NextResponse.json({ ok: true, sent: 0, cycles: cycles.length, date: dateStr })
   }
 
   const cycleIds = Array.from(new Set(candidates.map((c) => c.cycleId)))
@@ -202,14 +194,14 @@ export async function POST(req: Request) {
 
   const pending = candidates.filter((c) => !existing.has(`${c.cycleId}|${c.userId}|${c.kind}`))
   if (pending.length === 0) {
-    return NextResponse.json({ ok: true, sent: 0, cycles: cycles.length })
+    return NextResponse.json({ ok: true, sent: 0, cycles: cycles.length, date: dateStr })
   }
 
   const groups = new Map<
     string,
     {
       recipients: Set<string>
-      kind: "due_1d" | "due_7d"
+      kind: NotifyKind
       payload: { title: string; body: string; url: string; type: string }
     }
   >()
@@ -224,13 +216,22 @@ export async function POST(req: Request) {
 
     const dueLabel = formatDueDate(item.dueDate)
     const amountLabel = formatCurrency(item.amount, item.currency)
-    const prefix = item.kind === "due_1d" ? "Domani scade" : "Tra 7 giorni scade"
+
+    const prefix =
+      item.kind === "due_0d" ? "Oggi scade" :
+      item.kind === "due_1d" ? "Domani scade" :
+      "Tra 7 giorni scade"
+
+    const type =
+      item.kind === "due_0d" ? "expense-due-0d" :
+      item.kind === "due_1d" ? "expense-due-1d" :
+      "expense-due-7d"
 
     const payload = {
       title: "Scadenza spesa",
       body: `${prefix} ${item.name} · ${amountLabel} · ${dueLabel}`,
       url: "/dashboard/spese",
-      type: item.kind === "due_1d" ? "expense-due-1d" : "expense-due-7d",
+      type,
     }
 
     groups.set(key, {
@@ -262,14 +263,11 @@ export async function POST(req: Request) {
 
   if (toLog.length > 0) {
     const { error: logErr } = await supabase.from("expense_notification_log").insert(toLog)
-    if (logErr) {
-      console.error("[expense notifications] log insert failed", logErr)
-    }
+    if (logErr) console.error("[expense notifications] log insert failed", logErr)
   }
 
   const res = NextResponse.json({
     ok: true,
-    version: "debug-2025-12-29-01",
     sent: toLog.length,
     cycles: cycles.length,
     date: dateStr,
@@ -282,6 +280,5 @@ export async function POST(req: Request) {
     },
   })
 
-  res.headers.set("x-expense-notify-version", "debug-2025-12-29-01")
   return res
 }
