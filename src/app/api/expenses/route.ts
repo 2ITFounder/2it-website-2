@@ -36,7 +36,31 @@ export async function GET(req: Request) {
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ data })
+  const expenseIds = (data ?? []).map((row) => row.id)
+  if (expenseIds.length === 0) return NextResponse.json({ data })
+
+  const { data: cycles, error: cyclesErr } = await supabase
+    .from("expense_cycles")
+    .select("expense_id,due_date")
+    .in("expense_id", expenseIds)
+    .eq("status", "pending")
+    .order("due_date", { ascending: true })
+
+  if (cyclesErr) return NextResponse.json({ error: cyclesErr.message }, { status: 500 })
+
+  const nextPendingByExpense = new Map<string, string>()
+  for (const cycle of cycles ?? []) {
+    if (!nextPendingByExpense.has(cycle.expense_id)) {
+      nextPendingByExpense.set(cycle.expense_id, cycle.due_date)
+    }
+  }
+
+  const normalized = (data ?? []).map((row) => ({
+    ...row,
+    next_pending_due_date: nextPendingByExpense.get(row.id) ?? null,
+  }))
+
+  return NextResponse.json({ data: normalized })
 }
 
 export async function POST(req: Request) {

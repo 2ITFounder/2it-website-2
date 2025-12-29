@@ -121,7 +121,7 @@ export function ExpenseListCard({
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Prossimo rinnovo</p>
-                  <p className="truncate">{formatDate(exp.next_due_date)}</p>
+                  <p className="truncate">{formatDate(exp.next_pending_due_date ?? exp.next_due_date)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Importo</p>
@@ -193,7 +193,9 @@ export function ExpenseListCard({
                 <span className="text-sm text-muted-foreground">{exp.vendor || "-"}</span>
                 <span className="text-sm text-muted-foreground">{exp.category || "-"}</span>
                 <span className="text-sm font-medium">{cadenceLabel[exp.cadence]}</span>
-                <span className="text-sm text-muted-foreground">{formatDate(exp.next_due_date)}</span>
+                <span className="text-sm text-muted-foreground">
+                  {formatDate(exp.next_pending_due_date ?? exp.next_due_date)}
+                </span>
                 <span className="text-sm font-semibold">{formatCurrency(exp.amount, exp.currency)}</span>
 
                 <div className="flex items-center gap-2">

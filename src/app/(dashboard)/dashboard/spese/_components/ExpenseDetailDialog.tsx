@@ -79,7 +79,8 @@ export function ExpenseDetailDialog({
               <div className="p-3 rounded-lg bg-muted/60">
                 <p className="text-xs text-muted-foreground">Cadenza</p>
                 <p className="font-medium">
-                  {cadenceLabel[selectedExpense.cadence]} - Prossimo {formatDate(selectedExpense.next_due_date)}
+                  {cadenceLabel[selectedExpense.cadence]} - Prossimo{" "}
+                  {formatDate(selectedExpense.next_pending_due_date ?? selectedExpense.next_due_date)}
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-muted/60">

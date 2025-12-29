@@ -41,6 +41,7 @@ export type Expense = {
   cadence: ExpenseCadence
   first_due_date: string
   next_due_date: string
+  next_pending_due_date?: string | null
   active: boolean
   expense_scope: ExpenseScope
   personal_user_id: string | null
