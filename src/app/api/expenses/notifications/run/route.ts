@@ -70,7 +70,8 @@ export async function POST(req: Request) {
   if (!incoming || incoming !== secret) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const { dateStr, hour } = getRomeDateParts()
-  if (hour !== 9) {
+  const force = req.headers.get("x-force-run") === "1"
+  if (!force && hour !== 9) {
     return NextResponse.json({ ok: true, skipped: "not-0900", date: dateStr, hour })
   }
 
@@ -235,5 +236,11 @@ export async function POST(req: Request) {
     sent: toLog.length,
     cycles: cycles.length,
     date: dateStr,
+    debug: {
+      includedIds: includedIds.length,
+      candidates: candidates.length,
+      pending: pending.length,
+      groups: groups.size,
+    },
   })
 }
