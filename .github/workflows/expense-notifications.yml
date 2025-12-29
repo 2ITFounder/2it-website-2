@@ -15,9 +15,7 @@ jobs:
       - name: Call Vercel endpoint
         run: |
           echo "Calling ${{ secrets.NOTIFICATIONS_RUN_URL }}"
-          curl -i -sS -X POST "${{ secrets.NOTIFICATIONS_RUN_URL }}" \
+          curl -sS -X POST "${{ secrets.NOTIFICATIONS_RUN_URL }}" \
             -H "x-expense-secret: ${{ secrets.EXPENSE_NOTIFICATIONS_SECRET }}" \
-            -H "x-force-run: 1" \
             -H "content-type: application/json" \
-            -w "\nHTTP_STATUS=%{http_code}\n"
 
